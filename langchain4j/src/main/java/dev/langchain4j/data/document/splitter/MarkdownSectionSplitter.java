@@ -25,10 +25,10 @@ import java.util.regex.Pattern;
  */
 public class MarkdownSectionSplitter implements DocumentSplitter {
 
-    public static final String SECTION_LEVEL = "md-section-level";
-    public static final String SECTION_HEADER = "md-section-header";
-    public static final String SECTION_INDEX_WITHIN_PARENT = "md-section-index-in-parent";
-    public static final String SECTION_PARENT_HEADER = "md-parent-header";
+    public static final String SECTION_LEVEL = "md_section_level";
+    public static final String SECTION_HEADER = "md_section_header";
+    public static final String SECTION_INDEX_WITHIN_PARENT = "md_section_index_in_parent";
+    public static final String SECTION_PARENT_HEADER = "md_parent_header";
     private static final Pattern HEADER_PATTERN = Pattern.compile("^#+ .*");
     private static final String CODE_BLOCK_MARKER = "```";
 
