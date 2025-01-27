@@ -4,7 +4,6 @@ import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentSplitter;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.segment.TextSegment;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.StringReader;
@@ -24,7 +23,7 @@ import java.util.regex.Pattern;
  * Then it optionally splits each section with the {@link DocumentSplitter} passed in to the Builder.
  *
  */
-public class MarkdownSectionSplitter implements DocumentSplitter {
+public class MarkdownSectionSplitterOld implements DocumentSplitter {
 
     public static final String SECTION_LEVEL = "md_section_level";
     public static final String SECTION_HEADER = "md_section_header";
@@ -41,7 +40,7 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
     private final String emptySectionPlaceholderText;
 
-    protected MarkdownSectionSplitter(Builder builder) {
+    protected MarkdownSectionSplitterOld(Builder builder) {
         this.sectionSplitter = builder.sectionSplitter;
         this.documentTitle = builder.documentTitle;
         this.emptySectionPlaceholderText = builder.emptySectionPlaceholderText;
@@ -279,7 +278,7 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         private String documentTitle;
         private String emptySectionPlaceholderText;
 
-        private Function<Builder, MarkdownSectionSplitter> constructor;
+        private Function<Builder, MarkdownSectionSplitterOld> constructor;
 
         /**
          * <p>Sets the {@link DocumentSplitter} to further split each section.</p>
@@ -321,7 +320,7 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             return this;
         }
 
-        public Builder setConstructor(Function<Builder, MarkdownSectionSplitter> constructor) {
+        public Builder setConstructor(Function<Builder, MarkdownSectionSplitterOld> constructor) {
             this.constructor = constructor;
             return this;
         }
@@ -330,9 +329,9 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
          * Constructs the {@link MarkdownSectionSplitter} instance
          * @return the MarkdownSectionSplitter
          */
-        public MarkdownSectionSplitter build() {
+        public MarkdownSectionSplitterOld build() {
             if (constructor == null) {
-                return new MarkdownSectionSplitter(this);
+                return new MarkdownSectionSplitterOld(this);
             }
             return constructor.apply(this);
         }
