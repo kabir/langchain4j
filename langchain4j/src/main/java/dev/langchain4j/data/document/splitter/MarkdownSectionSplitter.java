@@ -226,6 +226,8 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
         @Override
         public void visit(final IndentedCodeBlock codeBlock) {
+            // In the segment convert indented code blocks to fenced ones (so use the backticks rather than the
+            // 4 spaces/tabs
             currentSection.append("\n```\n");
             currentSection.append(codeBlock.getLiteral());
             currentSection.append("```\n");

@@ -251,7 +251,21 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
                 "Some text\n```\n    function(){\n       this.i++;\n}\n```");
     }
 
+    @Test
+    public void testEmphasis() {
+        String text = "# Title\n" +
+                "The *quick* brown _fox_ jumped **over** the __lazy__ dog";
 
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder().build();
+
+        Document source = createDocument(text);
+        List<TextSegment> segments = splitter.split(source);
+
+        Assertions.assertEquals(1, segments.size());
+        // IndentedCodeBlock.literal does not include the leading tabs/spaces
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
+                "The quick brown fox jumped over the lazy dog");
+    }
 
     private Document createDocument(String text) {
         DocumentSource loader = new StringDocumentSource(text);
