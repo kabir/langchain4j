@@ -178,7 +178,7 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
         @Override
         public void visit(final Paragraph paragraph) {
-            if (currentHeader != null) {
+            if (currentHeader != null || headers.isEmpty()) {
                 StringBuilder sb = new StringBuilder();
                 paragraph.accept(new AbstractVisitor() {
                     @Override
@@ -196,6 +196,9 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
                         sb.append(text.getLiteral());
                     }
                 });
+                if (currentHeader == null) {
+                    currentHeader = new Header(documentTitle, 1);
+                }
                 currentSection.append(sb);
             }
         }
