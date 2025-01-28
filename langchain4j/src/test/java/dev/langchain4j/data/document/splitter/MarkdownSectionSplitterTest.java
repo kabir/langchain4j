@@ -23,6 +23,9 @@ import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SEC
 
 public class MarkdownSectionSplitterTest implements WithAssertions {
 
+    // TODO Remove this
+    // Lots of the examples come from https://github.com/chrisalley/markdown-garden/tree/master/source/guides/quotations
+
     @Test
     public void testNoSubSplitter() {
         String text = "# Title\n"
@@ -327,6 +330,35 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0, "intro\n1. One\n2. Two `test` two");
     }
 
+    @Test
+    public void testNestedLists() {
+        String body = "intro\n" +
+//                "* One\n" +
+                "* Two\n" +
+//                "  * 2-1\n" +
+                "  * 2-2\n" +
+                "    1. 2-2-4\n" +
+                "      * 2-2-4-1\n" +
+//                "    2. 2-2-5\n" +
+//                "* Three\n" +
+//                "  1. 3-1\n" +
+                "  2. 3.2\n";
+
+
+
+        String text = "# Title\n" +
+                body;
+
+
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder()
+                .build();
+
+        Document source = createDocument(text);
+        List<TextSegment> segments = splitter.split(source);
+
+        Assertions.assertEquals(1, segments.size());
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0, body.trim());
+    }
 
 
     private Document createDocument(String text) {

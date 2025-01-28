@@ -166,6 +166,7 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         private StringBuilder currentSection = new StringBuilder();
         private Header currentHeader;
         private int nullHeaderIndex = 0;
+        private List<ListItemMarker> listStack = new ArrayList<>();
 
         public SectionsByHeaderVisitor(final Metadata originalMetadata) {
             this.originalMetadata = new Metadata(originalMetadata.toMap());
@@ -181,7 +182,7 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         @Override
         public void visit(final Paragraph paragraph) {
             if (currentHeader != null || headers.isEmpty()) {
-                paragraph.accept(new NestedContentVisitor(currentSection));
+                paragraph.accept(new NestedContentVisitor(currentSection, this));
                 if (currentHeader == null) {
                     currentHeader = new Header(documentTitle, 1);
                 }
@@ -205,7 +206,6 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             currentSection.append("```\n");
         }
 
-        private List<ListItemMarker> listStack = new ArrayList<>();
         @Override
         public void visit(final BulletList bulletList) {
             listStack.add(new BulletListItemMarker(bulletList.getMarker()));
@@ -228,12 +228,15 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
         @Override
         public void visit(final ListItem listItem) {
-            indent(currentSection, listItem.getMarkerIndent());
-            ListItemMarker marker = listStack.get(listStack.size() - 1);
             currentSection.append("\n");
+
+            int indent = 2 * (listStack.size() - 1);
+            indent(currentSection, indent);
+
+            ListItemMarker marker = listStack.get(listStack.size() - 1);
             currentSection.append(marker.getMarker());
             indent(currentSection, listItem.getContentIndent() - marker.getMarker().length());
-            listItem.accept(new NestedContentVisitor(currentSection));
+            listItem.accept(new NestedContentVisitor(currentSection, this));
             marker.itemComplete();
         }
 
@@ -337,9 +340,11 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
     private class NestedContentVisitor extends AbstractVisitor{
         private final StringBuilder sb;
+        private final SectionsByHeaderVisitor mainVisitor;
 
-        public NestedContentVisitor(final StringBuilder sb) {
+        public NestedContentVisitor(StringBuilder sb, SectionsByHeaderVisitor mainVisitor) {
             this.sb = sb;
+            this.mainVisitor = mainVisitor;
         }
 
         @Override
@@ -362,6 +367,24 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             sb.append("`").append(code.getLiteral()).append("`");
         }
 
+        @Override
+        public void visit(final BulletList bulletList) {
+            if (mainVisitor.listStack.isEmpty()) {
+                super.visit(bulletList);
+            } else {
+                mainVisitor.visit(bulletList);
+            }
+        }
+
+        @Override
+        public void visit(final OrderedList orderedList) {
+            if (mainVisitor.listStack.isEmpty()) {
+                super.visit(orderedList);
+            } else {
+                mainVisitor.visit(orderedList);
+            }
+
+        }
     }
 
     private interface ListItemMarker {
