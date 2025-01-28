@@ -5,6 +5,8 @@ import dev.langchain4j.data.document.DocumentSplitter;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.segment.TextSegment;
 import org.commonmark.node.AbstractVisitor;
+import org.commonmark.node.Code;
+import org.commonmark.node.FencedCodeBlock;
 import org.commonmark.node.HardLineBreak;
 import org.commonmark.node.Heading;
 import org.commonmark.node.Node;
@@ -201,7 +203,16 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
                 }
                 currentSection.append(sb);
             }
+            super.visit(paragraph);
         }
+
+        @Override
+        public void visit(final FencedCodeBlock codeBlock) {
+            currentSection.append("\n```\n");
+            currentSection.append(codeBlock.getLiteral());
+            currentSection.append("```\n");
+        }
+
 
         private void endSection() {
             if (currentHeader != null || !currentSection.isEmpty()) {
