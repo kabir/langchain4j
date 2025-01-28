@@ -1,5 +1,10 @@
 package dev.langchain4j.data.document.splitter;
 
+import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SECTION_HEADER;
+import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SECTION_INDEX_WITHIN_PARENT;
+import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SECTION_LEVEL;
+import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SECTION_PARENT_HEADER;
+
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentLoader;
 import dev.langchain4j.data.document.DocumentSource;
@@ -11,10 +16,13 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+
+import org.assertj.core.api.WithAssertions;
 import org.junit.Assert;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-public class MarkdownSectionSplitterTest {
+public class MarkdownSectionSplitterTest implements WithAssertions {
 
     @Test
     public void testNoSubSplitter() {
@@ -48,7 +56,7 @@ public class MarkdownSectionSplitterTest {
         Document source = createDocument(text);
         List<TextSegment> segments = splitter.split(source);
 
-        Assert.assertEquals(12, segments.size());
+        assertThat(segments.size()).isEqualTo(12);
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0, ".");
         checkTextSegment(source, segments.get(1), "Section 1", "Title", 1, 0, "section 1");
         checkTextSegment(source, segments.get(2), "Section 2", "Title", 1, 1, "section 2");
@@ -72,7 +80,7 @@ public class MarkdownSectionSplitterTest {
         Document source = createDocument(text);
         List<TextSegment> segments = splitter.split(source);
 
-        Assert.assertEquals(2, segments.size());
+        assertThat(segments.size()).isEqualTo(2);
         checkTextSegment(source, segments.get(0), null, null, 0, 0, "Intro text");
         checkTextSegment(source, segments.get(1), "Section 1", null, 1, 0, "section 1");
     }
@@ -87,7 +95,7 @@ public class MarkdownSectionSplitterTest {
         Document source = createDocument(text);
         List<TextSegment> segments = splitter.split(source);
 
-        Assert.assertEquals(2, segments.size());
+        assertThat(segments.size()).isEqualTo(2);
         checkTextSegment(source, segments.get(0), "Doc Title", null, 0, 0, "Intro text");
         checkTextSegment(source, segments.get(1), "Section 1", "Doc Title", 1, 0, "section 1");
     }
@@ -113,27 +121,27 @@ public class MarkdownSectionSplitterTest {
         Document source = createDocument(text);
         List<TextSegment> segments = splitter.split(source);
 
-        Assert.assertEquals(7, segments.size());
+        assertThat(segments.size()).isEqualTo(7);
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0, ".");
-        Assert.assertEquals(0, segments.get(0).metadata().getInteger("index").intValue());
+        assertThat(segments.get(0).metadata().getInteger("index")).isEqualTo(0);
 
         checkTextSegment(source, segments.get(1), "Section 1", "Title", 1, 0, "section 1");
-        Assert.assertEquals(0, segments.get(1).metadata().getInteger("index").intValue());
+        assertThat(segments.get(1).metadata().getInteger("index")).isEqualTo(0);
 
         checkTextSegment(source, segments.get(2), "Section 2", "Title", 1, 1, "section 2");
-        Assert.assertEquals(0, segments.get(2).metadata().getInteger("index").intValue());
+        assertThat(segments.get(2).metadata().getInteger("index")).isEqualTo(0);
 
         checkTextSegment(source, segments.get(3), "Section 2", "Title", 1, 1, "split");
-        Assert.assertEquals(1, segments.get(3).metadata().getInteger("index").intValue());
+        assertThat(segments.get(3).metadata().getInteger("index")).isEqualTo(1);
 
         checkTextSegment(source, segments.get(4), "Section 2.1", "Section 2", 2, 0, "section 2.1");
-        Assert.assertEquals(0, segments.get(4).metadata().getInteger("index").intValue());
+        assertThat(segments.get(4).metadata().getInteger("index")).isEqualTo(0);
 
         checkTextSegment(source, segments.get(5), "Section 2.2", "Section 2", 2, 1, "section 2.2");
-        Assert.assertEquals(0, segments.get(5).metadata().getInteger("index").intValue());
+        assertThat(segments.get(5).metadata().getInteger("index")).isEqualTo(0);
 
         checkTextSegment(source, segments.get(6), "Section 2.2", "Section 2", 2, 1, "split");
-        Assert.assertEquals(1, segments.get(6).metadata().getInteger("index").intValue());
+        assertThat(segments.get(6).metadata().getInteger("index")).isEqualTo(1);
     }
 
     @Test
@@ -157,7 +165,7 @@ public class MarkdownSectionSplitterTest {
         Document source = createDocument(text);
         List<TextSegment> segments = splitter.split(source);
 
-        Assert.assertEquals(3, segments.size());
+        assertThat(segments.size()).isEqualTo(3);
 
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0, ".");
         checkTextSegment(source, segments.get(1), "Section 1", "Title", 1, 0, "section 1\n```\n# In Code\n```");
@@ -175,15 +183,13 @@ public class MarkdownSectionSplitterTest {
         Document source = createDocument(text);
         List<TextSegment> segments = splitter.split(source);
 
-        Assert.assertEquals(2, segments.size());
+        Assertions.assertEquals(2, segments.size());
 
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0, "intro");
-        Assert.assertEquals(
-                0, segments.get(0).metadata().getInteger("test-counter").intValue());
+        assertThat(segments.get(0).metadata().getInteger("test-counter")).isEqualTo(0);
 
         checkTextSegment(source, segments.get(1), "Section 1", "Title", 1, 0, "section 1");
-        Assert.assertEquals(
-                1, segments.get(1).metadata().getInteger("test-counter").intValue());
+        assertThat(segments.get(1).metadata().getInteger("test-counter")).isEqualTo(1);
     }
 
     private Document createDocument(String text) {
@@ -203,20 +209,14 @@ public class MarkdownSectionSplitterTest {
             int level,
             int indexInParent,
             String text) {
-        Assert.assertEquals(header, ts.metadata().getString(MarkdownSectionSplitter.SECTION_HEADER));
-        Assert.assertEquals(parentHeader, ts.metadata().getString(MarkdownSectionSplitter.SECTION_PARENT_HEADER));
-        Assert.assertEquals(
-                level,
-                ts.metadata().getInteger(MarkdownSectionSplitter.SECTION_LEVEL).intValue());
-        Assert.assertEquals(
-                indexInParent,
-                ts.metadata()
-                        .getInteger(MarkdownSectionSplitter.SECTION_INDEX_WITHIN_PARENT)
-                        .intValue());
-        Assert.assertEquals(text, ts.text().trim());
+        assertThat(ts.metadata().getString(SECTION_HEADER)).isEqualTo(header);
+        assertThat(ts.metadata().getString(SECTION_PARENT_HEADER)).isEqualTo(parentHeader);
+        assertThat(ts.metadata().getInteger(SECTION_LEVEL).intValue()).isEqualTo(level);
+        assertThat(ts.metadata().getInteger(SECTION_INDEX_WITHIN_PARENT)).isEqualTo(indexInParent);
+        assertThat(ts.text().trim()).isEqualTo(text);
 
         for (String key : source.metadata().toMap().keySet()) {
-            Assert.assertEquals(source.metadata().getString(key), ts.metadata().getString(key));
+            assertThat(ts.metadata().getString(key)).isEqualTo(source.metadata().getString(key));
         }
     }
 
