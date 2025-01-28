@@ -267,6 +267,34 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
                 "The quick brown fox jumped over the lazy dog");
     }
 
+    @Test
+    public void testSetextHeaders() {
+        // We are testing ATX Headers elsewhere (they are of the format "# Header 1", "## Header 2" etc.)
+        // Setext uses equals under a line for H1, and hyphens for H2
+        String text = "Title\n" +
+                "=====\n" +
+                // We need an extra newline at the end of the section for the next line to be recognised as a header
+                // This is also the case when trying it out in a Markdown editor
+                "intro\n\n" +
+                "Section 1\n" +
+                "----\n" +
+                "section 1\n";
+
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder()
+                .build();
+
+        Document source = createDocument(text);
+        List<TextSegment> segments = splitter.split(source);
+
+        Assertions.assertEquals(2, segments.size());
+
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0, "intro");
+
+        checkTextSegment(source, segments.get(1), "Section 1", "Title", 1, 0, "section 1");
+    }
+
+
+
     private Document createDocument(String text) {
         DocumentSource loader = new StringDocumentSource(text);
         Document doc = DocumentLoader.load(loader, new TextDocumentParser());
