@@ -5,10 +5,12 @@ import dev.langchain4j.data.document.DocumentSplitter;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.segment.TextSegment;
 import org.commonmark.node.AbstractVisitor;
+import org.commonmark.node.BlockQuote;
 import org.commonmark.node.Code;
 import org.commonmark.node.FencedCodeBlock;
 import org.commonmark.node.HardLineBreak;
 import org.commonmark.node.Heading;
+import org.commonmark.node.IndentedCodeBlock;
 import org.commonmark.node.Node;
 import org.commonmark.node.Paragraph;
 import org.commonmark.node.SoftLineBreak;
@@ -40,9 +42,6 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
     public static final String SECTION_HEADER = "md_section_header";
     public static final String SECTION_INDEX_WITHIN_PARENT = "md_section_index_in_parent";
     public static final String SECTION_PARENT_HEADER = "md_parent_header";
-    private static final Pattern HEADER_PATTERN = Pattern.compile("^#+ .*");
-    private static final String CODE_BLOCK_MARKER = "```";
-
     private static final DocumentSplitter NO_SPLIT = document -> Collections.singletonList(document.toTextSegment());
 
     private final DocumentSplitter sectionSplitter;
@@ -197,6 +196,18 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
                     public void visit(final Text text) {
                         sb.append(text.getLiteral());
                     }
+
+                    @Override
+                    public void visit(final Code code) {
+                        sb.append("`").append(code.getLiteral()).append("`");
+                    }
+
+
+
+//                    @Override
+//                    public void visit(final BlockQuote blockQuote) {
+//                        super.v
+//                    }
                 });
                 if (currentHeader == null) {
                     currentHeader = new Header(documentTitle, 1);
@@ -208,6 +219,13 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
         @Override
         public void visit(final FencedCodeBlock codeBlock) {
+            currentSection.append("\n```\n");
+            currentSection.append(codeBlock.getLiteral());
+            currentSection.append("```\n");
+        }
+
+        @Override
+        public void visit(final IndentedCodeBlock codeBlock) {
             currentSection.append("\n```\n");
             currentSection.append(codeBlock.getLiteral());
             currentSection.append("```\n");

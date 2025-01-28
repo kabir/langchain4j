@@ -1,10 +1,5 @@
 package dev.langchain4j.data.document.splitter;
 
-import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SECTION_HEADER;
-import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SECTION_INDEX_WITHIN_PARENT;
-import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SECTION_LEVEL;
-import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SECTION_PARENT_HEADER;
-
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentLoader;
 import dev.langchain4j.data.document.DocumentSource;
@@ -12,15 +7,19 @@ import dev.langchain4j.data.document.DocumentSplitter;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.document.parser.TextDocumentParser;
 import dev.langchain4j.data.segment.TextSegment;
+import org.assertj.core.api.WithAssertions;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 
-import org.assertj.core.api.WithAssertions;
-import org.junit.Assert;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
+import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SECTION_HEADER;
+import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SECTION_INDEX_WITHIN_PARENT;
+import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SECTION_LEVEL;
+import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SECTION_PARENT_HEADER;
 
 public class MarkdownSectionSplitterTest implements WithAssertions {
 
@@ -145,7 +144,7 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
     }
 
     @Test
-    public void testHeaderInCodeBlock() {
+    public void testHeaderInFencedCodeBlock() {
         String text = "# Title\n"
                 + "## Section 1\n"
                 + "section 1\n"
@@ -173,6 +172,26 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
     }
 
     @Test
+    public void testCodeSpan() {
+        String text = "# Title\n"
+                + "## Section 1\n"
+                + "section 1 is `the best` ever\n"
+;
+
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder()
+                .setEmptySectionPlaceholderText(".")
+                .build();
+
+        Document source = createDocument(text);
+        List<TextSegment> segments = splitter.split(source);
+
+        assertThat(segments.size()).isEqualTo(2);
+
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0, ".");
+        checkTextSegment(source, segments.get(1), "Section 1", "Title", 1, 0, "section 1 is `the best` ever");
+    }
+
+    @Test
     public void testOverrideConvertSectionToDocument() {
         String text = "# Title\n" + "intro\n" + "## Section 1\n" + "section 1\n";
 
@@ -191,6 +210,48 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         checkTextSegment(source, segments.get(1), "Section 1", "Title", 1, 0, "section 1");
         assertThat(segments.get(1).metadata().getInteger("test-counter")).isEqualTo(1);
     }
+
+    @Test
+    public void testFencedCodeBlock() {
+        String text = "# Title\n" +
+                "Some text\n" +
+                "```\n" +
+                "    function(){\n" +
+                "       this.i++;\n" +
+                "\t}\n" +
+                "```";
+
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder().build();
+
+        Document source = createDocument(text);
+        List<TextSegment> segments = splitter.split(source);
+
+        Assertions.assertEquals(1, segments.size());
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
+                "Some text\n```\n    function(){\n       this.i++;\n\t}\n```");
+
+    }
+
+    @Test
+    public void testIndentedCodeBlock() {
+        String text = "# Title\n" +
+                "Some text\n\n" +
+                "        function(){\n" +
+                "           this.i++;\n" +
+                "\t}";
+
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder().build();
+
+        Document source = createDocument(text);
+        List<TextSegment> segments = splitter.split(source);
+
+        Assertions.assertEquals(1, segments.size());
+        // IndentedCodeBlock.literal does not include the leading tabs/spaces
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
+                "Some text\n```\n    function(){\n       this.i++;\n}\n```");
+    }
+
+
 
     private Document createDocument(String text) {
         DocumentSource loader = new StringDocumentSource(text);
