@@ -13,6 +13,7 @@ import org.commonmark.node.Heading;
 import org.commonmark.node.IndentedCodeBlock;
 import org.commonmark.node.ListItem;
 import org.commonmark.node.Node;
+import org.commonmark.node.OrderedList;
 import org.commonmark.node.Paragraph;
 import org.commonmark.node.SoftLineBreak;
 import org.commonmark.node.Text;
@@ -204,10 +205,10 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             currentSection.append("```\n");
         }
 
-        private List<String> listStack = new ArrayList<>();
+        private List<ListItemMarker> listStack = new ArrayList<>();
         @Override
         public void visit(final BulletList bulletList) {
-            listStack.add(bulletList.getMarker());
+            listStack.add(new BulletListItemMarker(bulletList.getMarker()));
             try {
                 super.visit(bulletList);
             } finally {
@@ -216,13 +217,24 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         }
 
         @Override
+        public void visit(final OrderedList orderedList) {
+            listStack.add(new OrderedListItemMarker(orderedList.getMarkerStartNumber(), orderedList.getMarkerDelimiter()));
+            try {
+                super.visit(orderedList);
+            } finally {
+                listStack.remove(listStack.size() - 1);
+            }
+        }
+
+        @Override
         public void visit(final ListItem listItem) {
             indent(currentSection, listItem.getMarkerIndent());
-            String marker = listStack.get(listStack.size() - 1);
+            ListItemMarker marker = listStack.get(listStack.size() - 1);
             currentSection.append("\n");
-            currentSection.append(marker);
-            indent(currentSection, listItem.getContentIndent() - marker.length());
+            currentSection.append(marker.getMarker());
+            indent(currentSection, listItem.getContentIndent() - marker.getMarker().length());
             listItem.accept(new NestedContentVisitor(currentSection));
+            marker.itemComplete();
         }
 
         private void indent(StringBuilder sb, int indent) {
@@ -350,6 +362,50 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             sb.append("`").append(code.getLiteral()).append("`");
         }
 
+    }
+
+    private interface ListItemMarker {
+        String getMarker();
+
+        void itemComplete();
+    }
+
+    private static class BulletListItemMarker implements ListItemMarker {
+        final String marker;
+
+        public BulletListItemMarker(final String marker) {
+            this.marker = marker;
+        }
+
+        @Override
+        public String getMarker() {
+            return marker;
+        }
+
+        @Override
+        public void itemComplete() {
+
+        }
+    }
+
+    private static class OrderedListItemMarker implements ListItemMarker {
+        int index = 0;
+        private final String markerDelimiter;
+
+        public OrderedListItemMarker(final int index, final String markerDelimiter) {
+            this.index = index;
+            this.markerDelimiter = markerDelimiter;
+        }
+
+        @Override
+        public String getMarker() {
+            return index + markerDelimiter;
+        }
+
+        @Override
+        public void itemComplete() {
+            index++;
+        }
     }
 
 }

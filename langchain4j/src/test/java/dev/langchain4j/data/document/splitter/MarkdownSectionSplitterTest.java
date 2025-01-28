@@ -294,7 +294,7 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
     }
 
     @Test
-    public void testUnorderedList() {
+    public void testBulletList() {
         String text = "# Title\n" +
                 "intro\n" +
                 "* One\n" +
@@ -308,6 +308,23 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
         Assertions.assertEquals(1, segments.size());
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0, "intro\n* One\n* Two `test` two");
+    }
+
+    @Test
+    public void testOrderedList() {
+        String text = "# Title\n" +
+                "intro\n" +
+                "1. One\n" +
+                "2. Two `test` two\n";
+
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder()
+                .build();
+
+        Document source = createDocument(text);
+        List<TextSegment> segments = splitter.split(source);
+
+        Assertions.assertEquals(1, segments.size());
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0, "intro\n1. One\n2. Two `test` two");
     }
 
 
