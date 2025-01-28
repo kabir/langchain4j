@@ -241,10 +241,9 @@ public class MarkdownSectionSplitterTest {
         }
 
         @Override
-        protected Document convertSectionToDocument(final Document source, final Section section) {
-            Document doc = super.convertSectionToDocument(source, section);
-            doc.metadata().put("test-counter", counter++);
-            return doc;
+        protected Document adjustDocument(final Document document) {
+            document.metadata().put("test-counter", counter++);
+            return document;
         }
     }
 }

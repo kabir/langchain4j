@@ -4,15 +4,21 @@ import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentSplitter;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.segment.TextSegment;
+import org.commonmark.node.AbstractVisitor;
+import org.commonmark.node.HardLineBreak;
+import org.commonmark.node.Heading;
+import org.commonmark.node.Node;
+import org.commonmark.node.Paragraph;
+import org.commonmark.node.SoftLineBreak;
+import org.commonmark.node.Text;
+import org.commonmark.parser.Parser;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.ListIterator;
+import java.util.Objects;
 import java.util.function.Function;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -20,11 +26,13 @@ import java.util.regex.Pattern;
  *
  * <p>The class is instantiated via the {@link Builder} returned from the {@link #builder()} method.</p>
  *
- * <p>It first splits out the sections according to the headers, and organises these hierarchically.
- * Then it optionally splits each section with the {@link DocumentSplitter} passed in to the Builder.
+ * <p>Internally it splits the document into sections, with metadata entries to identify the location of each section
+ * in the document. It then optionally splits each section with the {@link DocumentSplitter} passed in to the Builder.
  *
  */
 public class MarkdownSectionSplitter implements DocumentSplitter {
+
+    private static final Header NO_HEADER = new Header("==NO HEADER==", 1);
 
     public static final String SECTION_LEVEL = "md_section_level";
     public static final String SECTION_HEADER = "md_section_header";
@@ -61,217 +69,23 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
     @Override
     public List<TextSegment> split(Document document) {
-        List<Section> sections = readSections(document);
-        sections = organiseSectionsByHeader(sections);
+        Parser parser = Parser.builder().build();
+        Node root = parser.parse(document.text());
 
-        return splitSections(document, sections);
-    }
-
-    private List<TextSegment> splitSections(Document document, List<Section> sections) {
-        List<TextSegment> segments = new ArrayList<>();
-        for (Section section : sections) {
-            Document sectionDoc = convertSectionToDocument(document, section);
-            List<TextSegment> sectionSegments = sectionSplitter.split(sectionDoc);
-
-            segments.addAll(sectionSegments);
-
-            if (!section.children.isEmpty()) {
-                segments.addAll(splitSections(document, section.children));
-            }
-        }
-        return segments;
-    }
-
-    private List<Section> organiseSectionsByHeader(List<Section> sections) {
-        List<Section> topSections = new ArrayList<>();
-        for (Section section : sections) {
-            addSectionHierarchically(topSections, null, section);
-        }
-        return topSections;
-    }
-
-    private static void addSectionHierarchically(List<Section> sections, Section parent, Section section) {
-        Section last = sections.isEmpty() ? null : sections.get(sections.size() - 1);
-        if (last == null || last.level >= section.level) {
-            sections.add(section);
-            section.indexInParent = sections.size() - 1;
-            if (parent != null) {
-                section.parent = parent;
-            }
-        } else {
-            last.addChild(section);
-        }
-    }
-
-    private List<Section> readSections(Document document) {
-        List<Section> sections = new ArrayList<>();
-
-        BufferedReader reader = new BufferedReader(new StringReader(document.text()));
-        boolean inCodeBlock = false;
-        Section current = null;
-        try {
-            String line = reader.readLine();
-            while (line != null) {
-                if (line.startsWith(CODE_BLOCK_MARKER)) {
-                    inCodeBlock = !inCodeBlock;
-                }
-                String header = null;
-                if (!inCodeBlock) {
-                    Matcher matcher = HEADER_PATTERN.matcher(line);
-                    if (matcher.matches()) {
-                        header = line;
-                        // A new header means a new section
-                        current = new Section(header);
-                        sections.add(current);
-                    }
-                }
-                if (header == null) {
-                    // Special handling for when the document does not start with a header,
-                    // and thus there is no current section
-                    if (current == null) {
-                        current = new Section(0);
-                        current.header = documentTitle;
-                        sections.add(current);
-                    }
-                    current.sb.append(line);
-                    current.sb.append("\n");
-                }
-                line = reader.readLine();
-            }
-        } catch (IOException ignore) {
-            // No IO is being done above
-        }
-        return sections;
+        SectionsByHeaderVisitor visitor = new SectionsByHeaderVisitor(document.metadata());
+        root.accept(visitor);
+        visitor.finish();
+        return visitor.segments;
     }
 
     /**
-     * Creates a {@link Document} from the {@link Section}. This Document is used as the input to further splitting
-     * the section.
-     * <p>
-     * The {@link Metadata} is copied from the {@code source} Document, and then augmented with where in the
-     * Markdown hierarchy the section was found.
-     * <p>
-     * <p></p>Override this method to further augment the {@link Metadata}. In order to override, use
-     * {@link Builder#setConstructor(Function)} with the constructor of a subclass of {@link MarkdownSectionSplitter}.
+     * Hook to add more data to the {@link Document} representing a split section before splitting
+     * it into {@link TextSegment}s. This default implementation does nothing.
      *
-     * @param source the {@link Document} that was split into a hierarchy of {@link Section}s
-     * @param section the section to convert to a Document
-     * @return the section converted to a Document
+     * @param document the document containing the section
      */
-    protected Document convertSectionToDocument(Document source, Section section) {
-        return section.convertToDocument(source);
-    }
-
-    /**
-     * Represents a Markdown section in the discovered hierarchy.
-     */
-    protected class Section {
-        private final StringBuilder sb = new StringBuilder();
-        private final int level;
-        public int indexInParent;
-        private String header;
-
-        private Section parent;
-        private List<Section> children = new ArrayList<>();
-
-        private Section(int level) {
-            this.level = level;
-        }
-
-        private Section(String header) {
-            this(headerLevel(header));
-            this.header = header.substring(this.level + 1).trim();
-        }
-
-        private void addChild(Section section) {
-            addSectionHierarchically(children, this, section);
-        }
-
-        private static int headerLevel(String header) {
-            int i = 0;
-            for (; i < header.length(); i++) {
-                if (header.charAt(i) != '#') {
-                    return i - 1;
-                }
-            }
-            return i;
-        }
-
-        /**
-         * Gets the text in this section
-         * @return the section text
-         */
-        public String getSectionText() {
-            return sb.toString();
-        }
-
-        /**
-         * Gets the level of this section within the document hierarchy
-         *
-         * @return the level of this section
-         */
-        public int getLevel() {
-            return level;
-        }
-
-        /**
-         * Gets the index of this section within the parent
-         * @return the index of this section within the parent
-         */
-        public int getIndexInParent() {
-            return indexInParent;
-        }
-
-        /**
-         * Gets the header of this section
-         * @return the header
-         */
-        public String getHeader() {
-            return header;
-        }
-
-        /**
-         * Gets the parent of this section
-         * @return the parent, or {@code null} if this is a top-level section.
-         */
-        public Section getParent() {
-            return parent;
-        }
-
-        /**
-         * Gets the children of this section
-         * @return the children
-         */
-        public List<Section> getChildren() {
-            return children;
-        }
-
-        private Document convertToDocument(Document source) {
-            // Grab the metadata from the document
-            Metadata metadata = new Metadata(source.metadata().toMap());
-
-            // Set metadata about this particular section
-            metadata.put(SECTION_LEVEL, level);
-            if (header != null) {
-                metadata.put(SECTION_HEADER, header);
-            }
-            metadata.put(SECTION_INDEX_WITHIN_PARENT, indexInParent);
-            if (parent != null && parent.header != null) {
-                metadata.put(SECTION_PARENT_HEADER, parent.header);
-            }
-
-            String text = sb.toString();
-            if (text.isBlank() && emptySectionPlaceholderText != null) {
-                // Document constructor does not like blank text
-                text = emptySectionPlaceholderText;
-            }
-            return new Document(text, metadata);
-        }
-
-        @Override
-        public String toString() {
-            return "Section{" + "level=" + level + ", header='" + header + '\'' + ",\nsb=" + sb + '}';
-        }
+    protected Document adjustDocument(Document document) {
+        return document;
     }
 
     public static class Builder {
@@ -321,6 +135,11 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             return this;
         }
 
+        /**
+         *
+         * @param constructor
+         * @return
+         */
         public Builder setConstructor(Function<Builder, MarkdownSectionSplitter> constructor) {
             this.constructor = constructor;
             return this;
@@ -335,6 +154,143 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
                 return new MarkdownSectionSplitter(this);
             }
             return constructor.apply(this);
+        }
+    }
+
+    private class SectionsByHeaderVisitor extends AbstractVisitor {
+        private final Metadata originalMetadata;
+        private final List<TextSegment> segments = new ArrayList<>();
+        private final List<Header> headers = new ArrayList<>();
+        private StringBuilder currentSection = new StringBuilder();
+        private Header currentHeader;
+        private int nullHeaderIndex = 0;
+
+        public SectionsByHeaderVisitor(final Metadata originalMetadata) {
+            this.originalMetadata = new Metadata(originalMetadata.toMap());
+        }
+
+        @Override
+        public void visit(final Heading heading) {
+            endSection();
+
+            currentHeader = new Header(heading);
+        }
+
+        @Override
+        public void visit(final Paragraph paragraph) {
+            if (currentHeader != null) {
+                StringBuilder sb = new StringBuilder();
+                paragraph.accept(new AbstractVisitor() {
+                    @Override
+                    public void visit(final HardLineBreak hardLineBreak) {
+                        sb.append("\n");
+                    }
+
+                    @Override
+                    public void visit(final SoftLineBreak softLineBreak) {
+                        sb.append("\n");
+                    }
+
+                    @Override
+                    public void visit(final Text text) {
+                        sb.append(text.getLiteral());
+                    }
+                });
+                currentSection.append(sb);
+            }
+        }
+
+        private void endSection() {
+            if (currentHeader != null || !currentSection.isEmpty()) {
+                Header header = currentHeader != null ? currentHeader : NO_HEADER;
+                addHeaderToHierarchy(header);
+                addSectionSegments(header, currentSection.toString());
+            }
+
+            if (!currentSection.isEmpty()) {
+                currentSection = new StringBuilder();
+            }
+        }
+
+        private void addSectionSegments(Header header, String sectionText) {
+            // Set metadata about this particular section. Work on a copy
+            Metadata metadata = new Metadata(originalMetadata.toMap());
+            metadata.put(SECTION_LEVEL, header.level);
+            if (header.text != null) {
+                metadata.put(SECTION_HEADER, header.text);
+            }
+            metadata.put(SECTION_INDEX_WITHIN_PARENT, header.indexInParent);
+            if (header.parent != null && header.parent.text != null) {
+                metadata.put(SECTION_PARENT_HEADER, header.parent.text);
+            }
+
+            if (sectionText.isBlank() && emptySectionPlaceholderText != null) {
+                // Document constructor does not like blank text
+                sectionText = emptySectionPlaceholderText;
+            }
+            Document document = new Document(sectionText, metadata);
+            document = adjustDocument(document);
+            segments.addAll(sectionSplitter.split(document));
+        }
+
+        private void addHeaderToHierarchy(Header header) {
+            if (!headers.isEmpty()) {
+                for (ListIterator<Header> it = headers.listIterator(headers.size()) ; it.hasPrevious() ; ) {
+                    Header curr = it.previous();
+                    if (curr.level < header.level) {
+                        curr.addChild(header);
+                        break;
+                    }
+                }
+            }
+
+            headers.add(header);
+            if (header.parent == null) {
+                header.indexInParent = nullHeaderIndex++;
+            }
+
+        }
+
+        private void finish() {
+            endSection();
+        }
+    }
+
+    private static class Header {
+        private final String text;
+        private final int level;
+        private Header parent;
+        private final List<Header> children = new ArrayList<>();
+        private int indexInParent;
+
+        Header(Heading heading) {
+            this(
+                    heading.getFirstChild() != null ? ((Text) heading.getFirstChild()).getLiteral() : null,
+                    heading.getLevel());
+        }
+
+        private Header(final String text, final int level) {
+            this.text = text;
+            this.level = level - 1;
+        }
+
+        @Override
+        public boolean equals(final Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            Header header = (Header) o;
+            return level == header.level && Objects.equals(text, header.text);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(text, level);
+        }
+
+        private void addChild(Header child) {
+            children.add(child);
+            child.indexInParent = children.size() - 1;
+            child.parent = this;
         }
     }
 }

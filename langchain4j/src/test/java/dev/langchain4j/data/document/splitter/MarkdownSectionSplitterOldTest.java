@@ -169,7 +169,7 @@ public class MarkdownSectionSplitterOldTest {
     public void testOverrideConvertSectionToDocument() {
         String text = "# Title\n" + "intro\n" + "## Section 1\n" + "section 1\n";
 
-        DocumentSplitter splitter = MarkdownSectionSplitter.builder()
+        DocumentSplitter splitter = MarkdownSectionSplitterOld.builder()
                 .setConstructor(TestMarkdownSplitter::new)
                 .build();
 
@@ -234,7 +234,7 @@ public class MarkdownSectionSplitterOldTest {
         }
     }
 
-    private static class TestMarkdownSplitter extends MarkdownSectionSplitter {
+    private static class TestMarkdownSplitter extends MarkdownSectionSplitterOld {
         static int counter = 0;
 
         public TestMarkdownSplitter(Builder builder) {
@@ -242,7 +242,7 @@ public class MarkdownSectionSplitterOldTest {
         }
 
         @Override
-        protected Document convertSectionToDocument(final Document source, final Section section) {
+        protected Document convertSectionToDocument(final Document source, final MarkdownSectionSplitterOld.Section section) {
             Document doc = super.convertSectionToDocument(source, section);
             doc.metadata().put("test-counter", counter++);
             return doc;
