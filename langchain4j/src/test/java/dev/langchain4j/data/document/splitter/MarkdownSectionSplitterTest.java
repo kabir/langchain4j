@@ -263,6 +263,7 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
         Assertions.assertEquals(1, segments.size());
         // IndentedCodeBlock.literal does not include the leading tabs/spaces
+        // I don't think the emphasis delimiters are important in this case
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
                 "The quick brown fox jumped over the lazy dog");
     }
@@ -289,8 +290,24 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         Assertions.assertEquals(2, segments.size());
 
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0, "intro");
-
         checkTextSegment(source, segments.get(1), "Section 1", "Title", 1, 0, "section 1");
+    }
+
+    @Test
+    public void testUnorderedList() {
+        String text = "# Title\n" +
+                "intro\n" +
+                "* One\n" +
+                "* Two `test` two\n";
+
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder()
+                .build();
+
+        Document source = createDocument(text);
+        List<TextSegment> segments = splitter.split(source);
+
+        Assertions.assertEquals(1, segments.size());
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0, "intro\n* One\n* Two `test` two");
     }
 
 

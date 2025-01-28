@@ -5,12 +5,13 @@ import dev.langchain4j.data.document.DocumentSplitter;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.segment.TextSegment;
 import org.commonmark.node.AbstractVisitor;
-import org.commonmark.node.BlockQuote;
+import org.commonmark.node.BulletList;
 import org.commonmark.node.Code;
 import org.commonmark.node.FencedCodeBlock;
 import org.commonmark.node.HardLineBreak;
 import org.commonmark.node.Heading;
 import org.commonmark.node.IndentedCodeBlock;
+import org.commonmark.node.ListItem;
 import org.commonmark.node.Node;
 import org.commonmark.node.Paragraph;
 import org.commonmark.node.SoftLineBreak;
@@ -23,7 +24,6 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Objects;
 import java.util.function.Function;
-import java.util.regex.Pattern;
 
 /**
  * A {@link DocumentSplitter} that takes a Markdown as input.
@@ -180,39 +180,10 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         @Override
         public void visit(final Paragraph paragraph) {
             if (currentHeader != null || headers.isEmpty()) {
-                StringBuilder sb = new StringBuilder();
-                paragraph.accept(new AbstractVisitor() {
-                    @Override
-                    public void visit(final HardLineBreak hardLineBreak) {
-                        sb.append("\n");
-                    }
-
-                    @Override
-                    public void visit(final SoftLineBreak softLineBreak) {
-                        sb.append("\n");
-                    }
-
-                    @Override
-                    public void visit(final Text text) {
-                        sb.append(text.getLiteral());
-                    }
-
-                    @Override
-                    public void visit(final Code code) {
-                        sb.append("`").append(code.getLiteral()).append("`");
-                    }
-
-
-
-//                    @Override
-//                    public void visit(final BlockQuote blockQuote) {
-//                        super.v
-//                    }
-                });
+                paragraph.accept(new NestedContentVisitor(currentSection));
                 if (currentHeader == null) {
                     currentHeader = new Header(documentTitle, 1);
                 }
-                currentSection.append(sb);
             }
             super.visit(paragraph);
         }
@@ -233,6 +204,30 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             currentSection.append("```\n");
         }
 
+        private List<String> listStack = new ArrayList<>();
+        @Override
+        public void visit(final BulletList bulletList) {
+            listStack.add(bulletList.getMarker());
+            try {
+                super.visit(bulletList);
+            } finally {
+                listStack.remove(listStack.size() - 1);
+            }
+        }
+
+        @Override
+        public void visit(final ListItem listItem) {
+            indent(currentSection, listItem.getMarkerIndent());
+            String marker = listStack.get(listStack.size() - 1);
+            currentSection.append("\n");
+            currentSection.append(marker);
+            indent(currentSection, listItem.getContentIndent() - marker.length());
+            listItem.accept(new NestedContentVisitor(currentSection));
+        }
+
+        private void indent(StringBuilder sb, int indent) {
+            sb.append(" ".repeat(Math.max(0, indent)));
+        }
 
         private void endSection() {
             if (currentHeader != null || !currentSection.isEmpty()) {
@@ -327,4 +322,34 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             child.parent = this;
         }
     }
+
+    private class NestedContentVisitor extends AbstractVisitor{
+        private final StringBuilder sb;
+
+        public NestedContentVisitor(final StringBuilder sb) {
+            this.sb = sb;
+        }
+
+        @Override
+        public void visit(final HardLineBreak hardLineBreak) {
+            sb.append("\n");
+        }
+
+        @Override
+        public void visit(final SoftLineBreak softLineBreak) {
+            sb.append("\n");
+        }
+
+        @Override
+        public void visit(final Text text) {
+            sb.append(text.getLiteral());
+        }
+
+        @Override
+        public void visit(final Code code) {
+            sb.append("`").append(code.getLiteral()).append("`");
+        }
+
+    }
+
 }
