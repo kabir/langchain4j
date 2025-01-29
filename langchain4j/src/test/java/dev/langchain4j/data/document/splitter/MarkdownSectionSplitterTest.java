@@ -148,8 +148,8 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
     @Test
     public void testHeaderInFencedCodeBlock() {
-        // The parser adds a blank line between the paragraph and the code block.
-        // Test both cases
+        // The parser adds a blank line between the previous paragraph and the code block.
+        // Test input with both cases
         String text = "# Title\n"
                 + "## Section 1\n"
                 + "section 1\n"
@@ -219,7 +219,7 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
     @Test
     public void testFencedCodeBlock() {
-        // The parser adds an empty line between text and a code block. After the code block, there is no
+        // The parser adds an empty line between text and a following code block. After the code block, there is no
         // space before any following text.
         // Test some variations of the input.
         String text = "# Title\n" +
@@ -249,9 +249,10 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
     @Test
     public void testIndentedCodeBlock() {
-        // The parser adds an empty line between text and a code block. After the code block, there is no
+        // The parser adds an empty line between text and a following code block. After the code block, there is no
         // space before any following text.
         // Test some variations of the input.
+        // In the output Markdown, we use the fenced style always for consistency.
         String text = "# Title\n" +
                 "Some text\n\n" +
                 "        function(){\n" +
@@ -267,7 +268,7 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         List<TextSegment> segments = splitter.split(source);
 
         Assertions.assertEquals(1, segments.size());
-        // IndentedCodeBlock.literal does not include the leading tabs/spaces
+        // IndentedCodeBlock.literal does not include the leading tabs/4 spaces
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
                 "Some text\n\n```\n    function(){\n       this.i++;\n    }\n```\n" +
                         "More text\n\n```\n    print(x);\n```\nFinal text");
@@ -276,6 +277,7 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
     @Test
     public void testParagraphs() {
+        // More than two '\n\n' gets replaced with just one.
         String text = "# Title\n" +
                 "Paragraph 1\n\nParagraph2\n\n\nParagraph3";
 
@@ -285,13 +287,14 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         List<TextSegment> segments = splitter.split(source);
 
         Assertions.assertEquals(1, segments.size());
-        // Here
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
                 "Paragraph 1\n\nParagraph2\n\nParagraph3");
     }
 
     @Test
     public void testEmphasis() {
+        // At the moment we are stripping out the emphasis markers.
+        // I don't think they are important to an LLM.
         String text = "# Title\n" +
                 "The *quick* brown _fox_ jumped **over** the __lazy__ dog";
 
@@ -301,8 +304,6 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         List<TextSegment> segments = splitter.split(source);
 
         Assertions.assertEquals(1, segments.size());
-        // IndentedCodeBlock.literal does not include the leading tabs/spaces
-        // I don't think the emphasis delimiters are important for an LLM?
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
                 "The quick brown fox jumped over the lazy dog");
     }
@@ -334,10 +335,17 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
     @Test
     public void testBulletList() {
+        // The parser will return a new line between previous text and the list itself.
+        // Try both types of input
         String text = "# Title\n" +
                 "intro\n" +
-                "* One\n" +
-                "* Two `test` two\n";
+                "- One\n" +
+                "- Two `test` two\n" +
+                "\n" + // Double \n is needed here to end the list
+                "After text\n" +
+                "\n" +
+                "* First\n" +
+                "* Second";
 
         DocumentSplitter splitter = MarkdownSectionSplitter.builder()
                 .build();
@@ -346,7 +354,8 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         List<TextSegment> segments = splitter.split(source);
 
         Assertions.assertEquals(1, segments.size());
-        checkTextSegment(source, segments.get(0), "Title", null, 0, 0, "intro\n* One\n* Two `test` two");
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
+                "intro\n\n* One\n* Two `test` two\n\nAfter text\n\n* First\n* Second");
     }
 
     @Test

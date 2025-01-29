@@ -233,7 +233,7 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
         @Override
         public void visit(final BulletList bulletList) {
-            listStack.add(new BulletListItemMarker(bulletList.getMarker()));
+            listStack.add(new BulletListItemMarker());
             try {
                 super.visit(bulletList);
             } finally {
@@ -397,15 +397,14 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
     }
 
     private static class BulletListItemMarker implements ListItemMarker {
-        final String marker;
+        private static final String MARKER = "*";
 
-        public BulletListItemMarker(final String marker) {
-            this.marker = marker;
+        BulletListItemMarker() {
         }
 
         @Override
         public String getMarker() {
-            return marker;
+            return MARKER;
         }
 
         @Override
@@ -418,7 +417,7 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         int index = 0;
         private final String markerDelimiter;
 
-        public OrderedListItemMarker(final int index, final String markerDelimiter) {
+        OrderedListItemMarker(final int index, final String markerDelimiter) {
             this.index = index;
             this.markerDelimiter = markerDelimiter;
         }
