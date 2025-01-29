@@ -21,8 +21,10 @@ import org.commonmark.node.StrongEmphasis;
 import org.commonmark.node.Text;
 import org.commonmark.parser.Parser;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Objects;
@@ -168,7 +170,8 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         private StringBuilder currentSection = new StringBuilder();
         private Header currentHeader;
         private int nullHeaderIndex = 0;
-        private List<ListItemMarker> listStack = new ArrayList<>();
+//        private List<ListItemMarker> listStack = new ArrayList<>();
+        private Deque<ListItemMarker> listStack = new ArrayDeque<>();
 
         public SectionsByHeaderVisitor(final Metadata originalMetadata) {
             this.originalMetadata = new Metadata(originalMetadata.toMap());
@@ -233,11 +236,11 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
         @Override
         public void visit(final BulletList bulletList) {
-            listStack.add(new BulletListItemMarker());
+            listStack.push(new BulletListItemMarker(listStack.peek()));
             try {
                 super.visit(bulletList);
             } finally {
-                listStack.remove(listStack.size() - 1);
+                listStack.pop();
             }
             if (!(bulletList.getParent() instanceof ListItem)) {
                 currentSection.append("\n\n");
@@ -246,11 +249,11 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
         @Override
         public void visit(final OrderedList orderedList) {
-            listStack.add(new OrderedListItemMarker(orderedList.getMarkerStartNumber(), orderedList.getMarkerDelimiter()));
+            listStack.push(new OrderedListItemMarker(listStack.peek(), orderedList.getMarkerStartNumber(), orderedList.getMarkerDelimiter()));
             try {
                 super.visit(orderedList);
             } finally {
-                listStack.remove(listStack.size() - 1);
+                listStack.pop();
             }
             if (!(orderedList.getParent() instanceof ListItem)) {
                 currentSection.append("\n\n");
@@ -259,16 +262,16 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
         @Override
         public void visit(final ListItem listItem) {
-            if (currentSection.length() == 0 || currentSection.charAt(currentSection.length() - 1) != '\n') {
+            if (currentSection.isEmpty() || currentSection.charAt(currentSection.length() - 1) != '\n') {
                 currentSection.append("\n");
             }
 
-            int indent = 2 * (listStack.size() - 1);
+            int indent = listStack.peek().getIndent();
             indent(currentSection, indent);
 
-            ListItemMarker marker = listStack.get(listStack.size() - 1);
+            ListItemMarker marker = listStack.peek();
             currentSection.append(marker.getMarker());
-            indent(currentSection, listItem.getContentIndent() - marker.getMarker().length());
+            currentSection.append(" ");
             super.visit(listItem);
             marker.itemComplete();
         }
@@ -390,16 +393,35 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         }
     }
 
-     private interface ListItemMarker {
-        String getMarker();
+     private static abstract class ListItemMarker {
+         private final int indent;
+         private final int childIndent;
 
-        void itemComplete();
+         abstract String getMarker();
+
+         abstract void itemComplete();
+
+         public ListItemMarker(ListItemMarker previous, int childIndent) {
+             if (previous == null) {
+                 indent = 0;
+             } else {
+                 indent = previous.getIndent() + previous.childIndent;
+             }
+             this.childIndent = childIndent;
+         }
+
+         int getIndent() {
+             return indent;
+         }
     }
 
-    private static class BulletListItemMarker implements ListItemMarker {
+    private static class BulletListItemMarker extends ListItemMarker {
         private static final String MARKER = "*";
+        private static final int CHILD_INDENT = 2;
 
-        BulletListItemMarker() {
+
+        BulletListItemMarker(ListItemMarker previous) {
+            super(previous, CHILD_INDENT);
         }
 
         @Override
@@ -409,15 +431,18 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
         @Override
         public void itemComplete() {
-
         }
+
     }
 
-    private static class OrderedListItemMarker implements ListItemMarker {
-        int index = 0;
+    private static class OrderedListItemMarker extends ListItemMarker {
+        private static final int CHILD_INDENT = 3;
+        int index;
         private final String markerDelimiter;
 
-        OrderedListItemMarker(final int index, final String markerDelimiter) {
+
+        OrderedListItemMarker(ListItemMarker previous, final int index, final String markerDelimiter) {
+            super(previous, CHILD_INDENT);
             this.index = index;
             this.markerDelimiter = markerDelimiter;
         }
