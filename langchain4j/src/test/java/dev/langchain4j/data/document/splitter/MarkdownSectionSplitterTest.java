@@ -148,6 +148,8 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
     @Test
     public void testHeaderInFencedCodeBlock() {
+        // The parser adds a blank line between the paragraph and the code block.
+        // Test both cases
         String text = "# Title\n"
                 + "## Section 1\n"
                 + "section 1\n"
@@ -156,6 +158,7 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
                 + "```\n"
                 + "## Section 2\n"
                 + "section 2\n"
+                + "\n"
                 + "```\n"
                 + "# In Code\n"
                 + "```\n";
@@ -170,8 +173,8 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         assertThat(segments.size()).isEqualTo(3);
 
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0, ".");
-        checkTextSegment(source, segments.get(1), "Section 1", "Title", 1, 0, "section 1\n```\n# In Code\n```");
-        checkTextSegment(source, segments.get(2), "Section 2", "Title", 1, 1, "section 2\n```\n# In Code\n```");
+        checkTextSegment(source, segments.get(1), "Section 1", "Title", 1, 0, "section 1\n\n```\n# In Code\n```");
+        checkTextSegment(source, segments.get(2), "Section 2", "Title", 1, 1, "section 2\n\n```\n# In Code\n```");
     }
 
     @Test
@@ -216,13 +219,21 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
     @Test
     public void testFencedCodeBlock() {
+        // The parser adds an empty line between text and a code block. After the code block, there is no
+        // space before any following text.
+        // Test some variations of the input.
         String text = "# Title\n" +
                 "Some text\n" +
                 "```\n" +
                 "    function(){\n" +
                 "       this.i++;\n" +
                 "\t}\n" +
-                "```";
+                "```\n" +
+                "More text\n\n" +
+                "```\n" +
+                "    print(x);\n" +
+                "```\n\n" +
+                "Final text";
 
         DocumentSplitter splitter = MarkdownSectionSplitter.builder().build();
 
@@ -231,17 +242,24 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
         Assertions.assertEquals(1, segments.size());
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
-                "Some text\n```\n    function(){\n       this.i++;\n\t}\n```");
+                "Some text\n\n```\n    function(){\n       this.i++;\n\t}\n```\n" +
+                        "More text\n\n```\n    print(x);\n```\nFinal text");
 
     }
 
     @Test
     public void testIndentedCodeBlock() {
+        // The parser adds an empty line between text and a code block. After the code block, there is no
+        // space before any following text.
+        // Test some variations of the input.
         String text = "# Title\n" +
                 "Some text\n\n" +
                 "        function(){\n" +
                 "           this.i++;\n" +
-                "\t}";
+                "\t    }\n" +
+                "More text\n\n" +
+                "        print(x);\n" +
+                "Final text";
 
         DocumentSplitter splitter = MarkdownSectionSplitter.builder().build();
 
@@ -251,7 +269,25 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         Assertions.assertEquals(1, segments.size());
         // IndentedCodeBlock.literal does not include the leading tabs/spaces
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
-                "Some text\n```\n    function(){\n       this.i++;\n}\n```");
+                "Some text\n\n```\n    function(){\n       this.i++;\n    }\n```\n" +
+                        "More text\n\n```\n    print(x);\n```\nFinal text");
+
+    }
+
+    @Test
+    public void testParagraphs() {
+        String text = "# Title\n" +
+                "Paragraph 1\n\nParagraph2\n\n\nParagraph3";
+
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder().build();
+
+        Document source = createDocument(text);
+        List<TextSegment> segments = splitter.split(source);
+
+        Assertions.assertEquals(1, segments.size());
+        // Here
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
+                "Paragraph 1\n\nParagraph2\n\nParagraph3");
     }
 
     @Test
@@ -266,7 +302,7 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
         Assertions.assertEquals(1, segments.size());
         // IndentedCodeBlock.literal does not include the leading tabs/spaces
-        // I don't think the emphasis delimiters are important in this case
+        // I don't think the emphasis delimiters are important for an LLM?
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
                 "The quick brown fox jumped over the lazy dog");
     }

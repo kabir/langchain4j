@@ -7,6 +7,7 @@ import dev.langchain4j.data.segment.TextSegment;
 import org.commonmark.node.AbstractVisitor;
 import org.commonmark.node.BulletList;
 import org.commonmark.node.Code;
+import org.commonmark.node.Emphasis;
 import org.commonmark.node.FencedCodeBlock;
 import org.commonmark.node.HardLineBreak;
 import org.commonmark.node.Heading;
@@ -16,6 +17,7 @@ import org.commonmark.node.Node;
 import org.commonmark.node.OrderedList;
 import org.commonmark.node.Paragraph;
 import org.commonmark.node.SoftLineBreak;
+import org.commonmark.node.StrongEmphasis;
 import org.commonmark.node.Text;
 import org.commonmark.parser.Parser;
 
@@ -175,24 +177,47 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         @Override
         public void visit(final Heading heading) {
             endSection();
-
             currentHeader = new Header(heading);
         }
 
         @Override
         public void visit(final Paragraph paragraph) {
             if (currentHeader != null || headers.isEmpty()) {
-                paragraph.accept(new NestedContentVisitor(currentSection, this));
                 if (currentHeader == null) {
                     currentHeader = new Header(documentTitle, 1);
                 }
             }
             super.visit(paragraph);
+            if (!(paragraph.getParent() instanceof ListItem)) {
+                // Don't add extra lines for paragraphs in lists
+               currentSection.append("\n\n");
+            }
+        }
+
+        @Override
+        public void visit(final Text text) {
+            currentSection.append(text.getLiteral());
+        }
+
+        @Override
+        public void visit(final Emphasis emphasis) {
+            // Don't do anything special here for now.
+            // Otherwise, we should append "**" before and after visiting
+            super.visit(emphasis);
+        }
+
+        @Override
+        public void visit(final StrongEmphasis strongEmphasis) {
+            // Don't do anything special here for now.
+            // Otherwise, we should append "*" before and after visiting
+            super.visit(strongEmphasis);
         }
 
         @Override
         public void visit(final FencedCodeBlock codeBlock) {
-            currentSection.append("\n```\n");
+            currentSection.append("```");
+            currentSection.append(codeBlock.getInfo());
+            currentSection.append("\n");
             currentSection.append(codeBlock.getLiteral());
             currentSection.append("```\n");
         }
@@ -201,7 +226,7 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         public void visit(final IndentedCodeBlock codeBlock) {
             // In the segment convert indented code blocks to fenced ones (so use the backticks rather than the
             // 4 spaces/tabs
-            currentSection.append("\n```\n");
+            currentSection.append("```\n");
             currentSection.append(codeBlock.getLiteral());
             currentSection.append("```\n");
         }
@@ -214,6 +239,9 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             } finally {
                 listStack.remove(listStack.size() - 1);
             }
+            if (!(bulletList.getParent() instanceof ListItem)) {
+                currentSection.append("\n\n");
+            }
         }
 
         @Override
@@ -224,11 +252,16 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             } finally {
                 listStack.remove(listStack.size() - 1);
             }
+            if (!(orderedList.getParent() instanceof ListItem)) {
+                currentSection.append("\n\n");
+            }
         }
 
         @Override
         public void visit(final ListItem listItem) {
-            currentSection.append("\n");
+            if (currentSection.length() == 0 || currentSection.charAt(currentSection.length() - 1) != '\n') {
+                currentSection.append("\n");
+            }
 
             int indent = 2 * (listStack.size() - 1);
             indent(currentSection, indent);
@@ -236,9 +269,28 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             ListItemMarker marker = listStack.get(listStack.size() - 1);
             currentSection.append(marker.getMarker());
             indent(currentSection, listItem.getContentIndent() - marker.getMarker().length());
-            listItem.accept(new NestedContentVisitor(currentSection, this));
+            super.visit(listItem);
             marker.itemComplete();
         }
+
+        @Override
+        public void visit(final HardLineBreak hardLineBreak) {
+            currentSection.append("\n\n");
+            super.visit(hardLineBreak);
+        }
+
+        @Override
+        public void visit(final SoftLineBreak softLineBreak) {
+            currentSection.append("\n");
+            super.visit(softLineBreak);
+        }
+
+        @Override
+        public void visit(final Code code) {
+            currentSection.append("`").append(code.getLiteral()).append("`");
+        }
+
+
 
         private void indent(StringBuilder sb, int indent) {
             sb.append(" ".repeat(Math.max(0, indent)));
@@ -338,56 +390,7 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         }
     }
 
-    private class NestedContentVisitor extends AbstractVisitor{
-        private final StringBuilder sb;
-        private final SectionsByHeaderVisitor mainVisitor;
-
-        public NestedContentVisitor(StringBuilder sb, SectionsByHeaderVisitor mainVisitor) {
-            this.sb = sb;
-            this.mainVisitor = mainVisitor;
-        }
-
-        @Override
-        public void visit(final HardLineBreak hardLineBreak) {
-            sb.append("\n");
-        }
-
-        @Override
-        public void visit(final SoftLineBreak softLineBreak) {
-            sb.append("\n");
-        }
-
-        @Override
-        public void visit(final Text text) {
-            sb.append(text.getLiteral());
-        }
-
-        @Override
-        public void visit(final Code code) {
-            sb.append("`").append(code.getLiteral()).append("`");
-        }
-
-        @Override
-        public void visit(final BulletList bulletList) {
-            if (mainVisitor.listStack.isEmpty()) {
-                super.visit(bulletList);
-            } else {
-                mainVisitor.visit(bulletList);
-            }
-        }
-
-        @Override
-        public void visit(final OrderedList orderedList) {
-            if (mainVisitor.listStack.isEmpty()) {
-                super.visit(orderedList);
-            } else {
-                mainVisitor.visit(orderedList);
-            }
-
-        }
-    }
-
-    private interface ListItemMarker {
+     private interface ListItemMarker {
         String getMarker();
 
         void itemComplete();
