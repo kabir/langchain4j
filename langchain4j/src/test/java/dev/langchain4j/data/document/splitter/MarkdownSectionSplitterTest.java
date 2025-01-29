@@ -360,10 +360,17 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
     @Test
     public void testOrderedList() {
+        // The parser will return a new line between previous text and the list itself.
+        // Try both types of input
         String text = "# Title\n" +
                 "intro\n" +
                 "1. One\n" +
-                "2. Two `test` two\n";
+                "2. Two `test` two\n" +
+                "\n" + // Double \n is needed here to end the list
+                "After text\n" +
+                "\n" +
+                "1. First\n" +
+                "2. Second";
 
         DocumentSplitter splitter = MarkdownSectionSplitter.builder()
                 .build();
@@ -372,7 +379,8 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         List<TextSegment> segments = splitter.split(source);
 
         Assertions.assertEquals(1, segments.size());
-        checkTextSegment(source, segments.get(0), "Title", null, 0, 0, "intro\n1. One\n2. Two `test` two");
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
+                "intro\n\n1. One\n2. Two `test` two\n\nAfter text\n\n1. First\n2. Second");
     }
 
     @Test
