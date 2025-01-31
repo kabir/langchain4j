@@ -23,9 +23,6 @@ import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SEC
 
 public class MarkdownSectionSplitterTest implements WithAssertions {
 
-    // TODO Remove this
-    // Lots of the examples come from https://github.com/chrisalley/markdown-garden/tree/master/source/guides/quotations
-
     @Test
     public void testNoSubSplitter() {
         String text = "# Title\n"
@@ -470,6 +467,25 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         Assertions.assertEquals(1, segments.size());
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0, body);
 
+    }
+
+    @Test
+    public void testImagesRemoved() {
+        // I don't think images are relevant at this stage so let's check they are removed
+        String text = "# Title\n\n" +
+                "intro\n" +
+                "![link](/uri)\n" +
+                "outro\n";
+
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder().build();
+
+        Document source = createDocument(text);
+        List<TextSegment> segments = splitter.split(source);
+
+        Assertions.assertEquals(1, segments.size());
+
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
+                "intro\n\noutro");
     }
 
     private Document createDocument(String text) {

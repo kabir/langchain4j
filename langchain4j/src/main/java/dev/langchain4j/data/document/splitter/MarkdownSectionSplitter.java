@@ -6,6 +6,7 @@ import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.segment.TextSegment;
 import org.commonmark.node.FencedCodeBlock;
 import org.commonmark.node.Heading;
+import org.commonmark.node.Image;
 import org.commonmark.node.IndentedCodeBlock;
 import org.commonmark.node.Node;
 import org.commonmark.node.Text;
@@ -324,6 +325,11 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             if (isSectionHeader) {
                 context.newSectionHeaderFound(heading);
             }
+        }
+
+        @Override
+        public void visit(final Image image) {
+            // Don't handle images
         }
 
         public void visit(final IndentedCodeBlock indentedCodeBlock) {
