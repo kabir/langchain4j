@@ -417,6 +417,8 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
     @Test
     public void testBlockQuotes() {
+        // The renderer adds empty lines around the lists.
+        // Test some variations of the input.
         String text = "# Title\n" +
                 "intro\n" +
                 "> line1\n" +
@@ -425,7 +427,18 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
                 "line3\n" +
                 "\n" +
                 "Other text\n\n" +
-                "> #Ignored header\n\n" +
+                "> # Ignored header\n\n" +
+                "Final text";
+
+        // The renderer massages the continuing 'line3' a bit, and adds a space after '>' but it is semantically the same.
+        String expected = "intro\n\n" +
+                "> line1\n" +
+                "> \n" +
+                "> line2\n" +
+                "> line3\n" +
+                "\n" +
+                "Other text\n\n" +
+                "> # Ignored header\n\n" +
                 "Final text";
 
         DocumentSplitter splitter = MarkdownSectionSplitter.builder()
@@ -435,7 +448,7 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         List<TextSegment> segments = splitter.split(source);
 
         Assertions.assertEquals(1, segments.size());
-        checkTextSegment(source, segments.get(0), "Title", null, 0, 0, text);
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0, expected);
 
     }
 

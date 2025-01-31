@@ -8,7 +8,6 @@ import org.commonmark.node.FencedCodeBlock;
 import org.commonmark.node.Heading;
 import org.commonmark.node.IndentedCodeBlock;
 import org.commonmark.node.Node;
-import org.commonmark.node.Paragraph;
 import org.commonmark.node.Text;
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.NodeRenderer;
@@ -80,16 +79,6 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         // I tried a few other approaches, but this is the only one I can find that works...
         renderer.render(node, context.getBuffer());
         context.endSection();
-
-
-
-//        System.out.println("---------\n\n");
-//        System.out.println("Buffer:");
-//        System.out.println(context.buffer.everything);
-//        System.out.println("Parts:");
-////        for (String s : context.parts) {
-////            System.out.print(s);
-////        }
 
         return context.getSegments();
     }
@@ -324,9 +313,17 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
         @Override
         public void visit(Heading heading) {
-            context.endSection();
+            boolean isSectionHeader = !isHeadingInBlock(heading);
+
+            if (isSectionHeader) {
+                context.endSection();
+            }
+
             super.visit(heading);
-            context.newSectionHeaderFound(heading);
+
+            if (isSectionHeader) {
+                context.newSectionHeaderFound(heading);
+            }
         }
 
         public void visit(final IndentedCodeBlock indentedCodeBlock) {
@@ -335,6 +332,16 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             String literal = indentedCodeBlock.getLiteral();
             fencedCodeBlock.setLiteral(literal);
             super.visit(fencedCodeBlock);
+        }
+
+        private boolean isHeadingInBlock(Heading heading) {
+            Node parent = heading.getParent();
+            if (parent != null) {
+                if (!(parent instanceof org.commonmark.node.Document) && !(parent instanceof Heading)) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 
