@@ -1,9 +1,13 @@
 package dev.langchain4j.data.document.splitter;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonParser;
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentSplitter;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.internal.ValidationUtils;
 import org.commonmark.node.FencedCodeBlock;
 import org.commonmark.node.Heading;
 import org.commonmark.node.Image;
@@ -20,8 +24,10 @@ import org.commonmark.renderer.markdown.MarkdownRenderer;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
@@ -43,6 +49,7 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
     public static final String SECTION_HEADER = "md_section_header";
     public static final String SECTION_INDEX_WITHIN_PARENT = "md_section_index_in_parent";
     public static final String SECTION_PARENT_HEADER = "md_parent_header";
+    public static final String SEGMENT_LINKS = "segmen_links";
     private static final DocumentSplitter NO_SPLIT = document -> Collections.singletonList(document.toTextSegment());
 
     private final DocumentSplitter sectionSplitter;
@@ -54,13 +61,12 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
     private LinkHandling linkHandling;
 
     protected MarkdownSectionSplitter(Builder builder) {
+        ValidationUtils.ensureNotNull(builder.sectionSplitter, "sectionSplitter");
+        ValidationUtils.ensureNotNull(builder.linkHandling, "linkHandling");
         this.sectionSplitter = builder.sectionSplitter;
         this.documentTitle = builder.documentTitle;
         this.emptySectionPlaceholderText = builder.emptySectionPlaceholderText;
         this.linkHandling = builder.linkHandling;
-        if (sectionSplitter == null) {
-            throw new IllegalArgumentException("Null sectionSplitter");
-        }
     }
 
     /**
@@ -103,7 +109,7 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         private String documentTitle;
         private String emptySectionPlaceholderText;
 
-        private LinkHandling linkHandling = LinkHandling.STRIP;
+        private LinkHandling linkHandling = LinkHandling.STANDARD;
 
         private Function<Builder, MarkdownSectionSplitter> constructor;
 
@@ -157,6 +163,18 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             return this;
         }
 
+
+        /**
+         * Sets the link handling for the splitter. The default is {@link LinkHandling#STRIP}.
+         *
+         * @param linkHandling the link handling
+         * @return this builder
+         */
+        public Builder setLinkHandling(LinkHandling linkHandling) {
+            this.linkHandling = linkHandling;
+            return this;
+        }
+
         /**
          * Constructs the {@link MarkdownSectionSplitter} instance
          * @return the MarkdownSectionSplitter
@@ -171,9 +189,31 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
     public enum LinkHandling {
         /**
-         * Strips any links out, just leaving the text
+         * Doesn't do anything to the links. The markdown for links in the resulting {@code TextSegment}s is the same
+         * as in the original.
          */
-        STRIP
+        STANDARD,
+        /**
+         * Strips any links out, just leaving the text. So {@code [A Link](https://z.com)} becomes just {@code A Link}.
+         */
+        STRIP,
+        /**
+         * The original link text is left in place, and the links are added to the metadata. So e.g. the following
+         * markdown is left in place in the markdown:
+         * <pre>
+         *     Click [here](https://a.com) and [here](https://b.com)
+         * </pre>
+         * <p>
+         * The above will result in the following Json string in the the metadata under the key "segment-links":
+         * <pre>
+         *     "{
+         *          "[here](https://a.com)":"https://a.com",
+         *          "[here](https://b.com)":"https://b.com"
+         *      }"
+         * </pre>
+         * </p>
+         */
+        METADATA
     }
 
     private class MarkdownSplitterContext {
@@ -183,8 +223,8 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         private final List<TextSegment> segments = new ArrayList<>();
         private final List<Header> headers = new ArrayList<>();
         private Header currentHeader;
-
         private int nullHeaderIndex = 0;
+        private Map<String, String> currentSectionLinks = new HashMap<>();
 
         MarkdownSplitterContext(Metadata metadata) {
             originalMetadata = metadata;
@@ -208,6 +248,7 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
                 Header header = currentHeader != null ? currentHeader : NO_HEADER;
                 addHeaderToHierarchy(header);
                 addSectionSegments(header, currentSection);
+                currentSectionLinks.clear();
             }
         }
 
@@ -236,8 +277,36 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             }
             Document document = new Document(sectionText, metadata);
             document = adjustDocument(document);
-            segments.addAll(sectionSplitter.split(document));
+
+            List<TextSegment> segments = sectionSplitter.split(document);
+            if (!currentSectionLinks.isEmpty()) {
+
+                for (TextSegment segment : segments) {
+
+                    Map<String, String> segmentLinks = null;
+                    String segmentText = segment.text();
+
+                    for (Map.Entry<String, String> entry : currentSectionLinks.entrySet()) {
+                        if (segmentText.contains(entry.getKey())) {
+                            if (segmentLinks == null) {
+                                segmentLinks = new HashMap<>();
+                            }
+                            segmentLinks.put(entry.getKey(), entry.getValue());
+                        }
+                    }
+                    if (segmentLinks != null) {
+                        System.out.println("Adding links");
+                        Gson gson = new GsonBuilder().create();
+                        String serializedLinks = gson.toJson(segmentLinks);
+                        segment.metadata().put(SEGMENT_LINKS, serializedLinks);
+                    }
+                }
+
+            }
+
+            this.segments.addAll(segments);
         }
+
 
         private void addHeaderToHierarchy(Header header) {
             if (!headers.isEmpty()) {
@@ -260,30 +329,30 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         public List<TextSegment> getSegments() {
             return segments;
         }
+
+        public void addLink(String markdownLink, String destination) {
+            currentSectionLinks.put(markdownLink, destination);
+        }
     }
 
     private static class MarkdownSplitterBuffer implements Appendable {
         // Temporary for testing
-        private StringBuilder everything = new StringBuilder();
         private StringBuilder current = new StringBuilder();
 
         @Override
         public Appendable append(final CharSequence csq) {
-            everything.append(csq);
             current.append(csq);
             return this;
         }
 
         @Override
         public Appendable append(final CharSequence csq, final int start, final int end) {
-            everything.append(csq, start, end);
             current.append(csq, start, end);
             return this;
         }
 
         @Override
         public Appendable append(final char c) {
-            everything.append(c);
             current.append(c);
             return this;
         }
@@ -292,6 +361,10 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             String temp = current.toString();
             current = new StringBuilder();
             return temp;
+        }
+
+        public String current() {
+            return current.toString();
         }
 
         @Override
@@ -361,13 +434,29 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
         @Override
         public void visit(final Link link) {
-            if (context.getLinkHandling() == LinkHandling.STRIP) {
-                visitChildren(link);
-                return;
+            switch (context.getLinkHandling()) {
+                case STANDARD: {
+                    super.visit(link);
+                    break;
+                }
+                case STRIP: {
+                    visitChildren(link);
+                    return;
+                }
+                case METADATA: {
+                    int before = context.getBuffer().length();
+                    String destination = link.getDestination();
+                    super.visit(link);
+                    int after = context.getBuffer().length();
+
+                    String contents = context.getBuffer().current();
+                    String markdownLink = contents.substring(before, after);
+                    context.addLink(markdownLink, destination);
+                    break;
+                }
+                default:
+                    throw new IllegalStateException("Unknown: " + context.getLinkHandling());
             }
-            int length = context.getBuffer().length();
-            String destination = link.getDestination();
-            super.visit(link);
         }
 
         private boolean isHeadingInBlock(Heading heading) {

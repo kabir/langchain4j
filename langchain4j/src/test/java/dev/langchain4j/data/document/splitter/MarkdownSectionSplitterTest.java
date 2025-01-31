@@ -1,5 +1,8 @@
 package dev.langchain4j.data.document.splitter;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentLoader;
 import dev.langchain4j.data.document.DocumentSource;
@@ -8,18 +11,23 @@ import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.document.parser.TextDocumentParser;
 import dev.langchain4j.data.segment.TextSegment;
 import org.assertj.core.api.WithAssertions;
+import org.junit.Assert;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Type;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SECTION_HEADER;
 import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SECTION_INDEX_WITHIN_PARENT;
 import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SECTION_LEVEL;
 import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SECTION_PARENT_HEADER;
+import static dev.langchain4j.data.document.splitter.MarkdownSectionSplitter.SEGMENT_LINKS;
 
 public class MarkdownSectionSplitterTest implements WithAssertions {
 
@@ -489,11 +497,30 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
     }
 
     @Test
+    public void testLinks_Standard() {
+        String text = "# Title\n\n" +
+                "intro [A Link](https://a.com \"testA\").";
+
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder()
+                .build();
+
+        Document source = createDocument(text);
+        List<TextSegment> segments = splitter.split(source);
+
+        Assertions.assertEquals(1, segments.size());
+
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
+                "intro [A Link](https://a.com \"testA\").");
+    }
+
+    @Test
     public void testLinks_Stripped() {
         String text = "# Title\n\n" +
-                "intro [A Link](https://z.com \"real\").";
+                "intro [A Link](https://a.com \"real\").";
 
-        DocumentSplitter splitter = MarkdownSectionSplitter.builder().build();
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder()
+                .setLinkHandling(MarkdownSectionSplitter.LinkHandling.STRIP)
+                .build();
 
         Document source = createDocument(text);
         List<TextSegment> segments = splitter.split(source);
@@ -502,6 +529,49 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
                 "intro A Link.");
+    }
+
+    @Test
+    public void testLinks_Metadata() {
+        String text = "# Title\n\n" +
+                "intro [Link A](https://a.com) [Link B](https://b.com).\n\n" +
+                "---\n\n" +
+                "outro [Link C](https://c.com)";
+
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder()
+                .setLinkHandling(MarkdownSectionSplitter.LinkHandling.METADATA)
+                .setSectionSplitter(document -> {
+                    String text1 = document.text();
+                    int index = text1.indexOf("---\n\n");
+                    TextSegment segmentA = TextSegment.textSegment(
+                            text1.substring(0, index), new Metadata(document.metadata().toMap()));
+                    TextSegment segmentB = TextSegment.textSegment(
+                            text1.substring(index + 4), new Metadata(document.metadata().toMap()));
+                    return List.of(segmentA, segmentB);
+                })
+                .build();
+
+        Document source = createDocument(text);
+        List<TextSegment> segments = splitter.split(source);
+
+        Assertions.assertEquals(2, segments.size());
+
+        Gson gson = new GsonBuilder().create();
+        Type type = new TypeToken<HashMap<String, String>>(){}.getType();
+
+
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
+                "intro [Link A](https://a.com) [Link B](https://b.com).");
+        Map<String, String> links = gson.fromJson(segments.get(0).metadata().getString(SEGMENT_LINKS), type);
+        Assertions.assertEquals(2, links.size());
+        Assertions.assertEquals("https://a.com", links.get("[Link A](https://a.com)"));
+        Assertions.assertEquals("https://b.com", links.get("[Link B](https://b.com)"));
+
+        checkTextSegment(source, segments.get(1), "Title", null, 0, 0,
+                "outro [Link C](https://c.com)");
+        links = gson.fromJson(segments.get(1).metadata().getString(SEGMENT_LINKS), type);
+        Assertions.assertEquals(1, links.size());
+        Assertions.assertEquals("https://c.com", links.get("[Link C](https://c.com)"));
     }
 
     private Document createDocument(String text) {
