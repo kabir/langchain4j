@@ -488,6 +488,22 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
                 "intro\n\noutro");
     }
 
+    @Test
+    public void testLinks_Stripped() {
+        String text = "# Title\n\n" +
+                "intro [A Link](https://z.com \"real\").";
+
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder().build();
+
+        Document source = createDocument(text);
+        List<TextSegment> segments = splitter.split(source);
+
+        Assertions.assertEquals(1, segments.size());
+
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
+                "intro A Link.");
+    }
+
     private Document createDocument(String text) {
         DocumentSource loader = new StringDocumentSource(text);
         Document doc = DocumentLoader.load(loader, new TextDocumentParser());

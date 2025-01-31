@@ -8,6 +8,7 @@ import org.commonmark.node.FencedCodeBlock;
 import org.commonmark.node.Heading;
 import org.commonmark.node.Image;
 import org.commonmark.node.IndentedCodeBlock;
+import org.commonmark.node.Link;
 import org.commonmark.node.Node;
 import org.commonmark.node.Text;
 import org.commonmark.parser.Parser;
@@ -50,10 +51,13 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
     private final String emptySectionPlaceholderText;
 
+    private LinkHandling linkHandling;
+
     protected MarkdownSectionSplitter(Builder builder) {
         this.sectionSplitter = builder.sectionSplitter;
         this.documentTitle = builder.documentTitle;
         this.emptySectionPlaceholderText = builder.emptySectionPlaceholderText;
+        this.linkHandling = builder.linkHandling;
         if (sectionSplitter == null) {
             throw new IllegalArgumentException("Null sectionSplitter");
         }
@@ -98,6 +102,8 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         private DocumentSplitter sectionSplitter = NO_SPLIT;
         private String documentTitle;
         private String emptySectionPlaceholderText;
+
+        private LinkHandling linkHandling = LinkHandling.STRIP;
 
         private Function<Builder, MarkdownSectionSplitter> constructor;
 
@@ -163,6 +169,12 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         }
     }
 
+    public enum LinkHandling {
+        /**
+         * Strips any links out, just leaving the text
+         */
+        STRIP
+    }
 
     private class MarkdownSplitterContext {
         private final MarkdownSplitterBuffer buffer = new MarkdownSplitterBuffer();
@@ -174,12 +186,16 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
         private int nullHeaderIndex = 0;
 
-        public MarkdownSplitterContext(Metadata metadata) {
+        MarkdownSplitterContext(Metadata metadata) {
             originalMetadata = metadata;
         }
 
-        public MarkdownSplitterBuffer getBuffer() {
+        MarkdownSplitterBuffer getBuffer() {
             return buffer;
+        }
+
+        LinkHandling getLinkHandling() {
+            return linkHandling;
         }
 
         public void endSection() {
@@ -283,6 +299,9 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             return current.toString();
         }
 
+        int length() {
+            return current.length();
+        }
     }
 
     private static class MarkdownSectionSplitterNodeRendererFactory implements MarkdownNodeRendererFactory {
@@ -338,6 +357,17 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             String literal = indentedCodeBlock.getLiteral();
             fencedCodeBlock.setLiteral(literal);
             super.visit(fencedCodeBlock);
+        }
+
+        @Override
+        public void visit(final Link link) {
+            if (context.getLinkHandling() == LinkHandling.STRIP) {
+                visitChildren(link);
+                return;
+            }
+            int length = context.getBuffer().length();
+            String destination = link.getDestination();
+            super.visit(link);
         }
 
         private boolean isHeadingInBlock(Heading heading) {
