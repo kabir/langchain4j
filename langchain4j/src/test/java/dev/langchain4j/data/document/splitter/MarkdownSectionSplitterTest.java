@@ -441,14 +441,34 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
                 "> # Ignored header\n\n" +
                 "Final text";
 
-        DocumentSplitter splitter = MarkdownSectionSplitter.builder()
-        .build();
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder().build();
 
         Document source = createDocument(text);
         List<TextSegment> segments = splitter.split(source);
 
         Assertions.assertEquals(1, segments.size());
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0, expected);
+
+    }
+
+    @Test
+    public void testNestedBlockQuotes() {
+        String body = "> Test\n" +
+                "> \n" +
+                "> > # Ignored header\n" +
+                "> > \n" +
+                "> > 1. One\n" +
+                "> > 2. Two";
+
+        String text = "# Title\n\n" + body;
+
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder().build();
+
+        Document source = createDocument(text);
+        List<TextSegment> segments = splitter.split(source);
+
+        Assertions.assertEquals(1, segments.size());
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0, body);
 
     }
 
