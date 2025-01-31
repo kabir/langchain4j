@@ -8,6 +8,8 @@ import dev.langchain4j.data.document.DocumentSplitter;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.internal.ValidationUtils;
+import org.commonmark.Extension;
+import org.commonmark.ext.gfm.tables.TablesExtension;
 import org.commonmark.node.FencedCodeBlock;
 import org.commonmark.node.Heading;
 import org.commonmark.node.Image;
@@ -44,6 +46,8 @@ import java.util.function.Function;
 public class MarkdownSectionSplitter implements DocumentSplitter {
 
     private static final Header NO_HEADER = new Header(null, 1);
+    private static final Set<Extension> EXTENSIONS = Set.of(TablesExtension.create());
+
 
     public static final String SECTION_LEVEL = "md_section_level";
     public static final String SECTION_HEADER = "md_section_header";
@@ -80,11 +84,12 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
     @Override
     public List<TextSegment> split(Document document) {
-        Node node = Parser.builder().build().parse(document.text());
+        Node node = Parser.builder().extensions(EXTENSIONS).build().parse(document.text());
 
         MarkdownSplitterContext context = new MarkdownSplitterContext(document.metadata());
         MarkdownRenderer renderer = MarkdownRenderer.builder()
                 .nodeRendererFactory(new MarkdownSectionSplitterNodeRendererFactory(context))
+                .extensions(EXTENSIONS)
                 .build();
         // We use the Appendable allowed by the renderer as the hook in.
         // I tried a few other approaches, but this is the only one I can find that works...

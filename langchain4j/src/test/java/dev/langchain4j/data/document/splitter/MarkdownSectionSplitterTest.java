@@ -574,6 +574,30 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         Assertions.assertEquals("https://c.com", links.get("[Link C](https://c.com)"));
     }
 
+    @Test
+    public void testTables() {
+                String text = "# Title\n\n" +
+                "intro\n" +
+                "\n" +
+                "| H1 | H2 |\n" +
+                "|----|----|\n" +
+                "| 1  | 2  |\n" +
+                "| 3  | 4  |\n\n" +
+                "outro";
+
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder()
+                .setLinkHandling(MarkdownSectionSplitter.LinkHandling.STRIP)
+                .build();
+        Document source = createDocument(text);
+        List<TextSegment> segments = splitter.split(source);
+
+        Assertions.assertEquals(1, segments.size());
+
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
+                "intro\n\n|H1|H2|\n|---|---|\n|1|2|\n|3|4|\n\noutro");
+
+    }
+
     private Document createDocument(String text) {
         DocumentSource loader = new StringDocumentSource(text);
         Document doc = DocumentLoader.load(loader, new TextDocumentParser());
