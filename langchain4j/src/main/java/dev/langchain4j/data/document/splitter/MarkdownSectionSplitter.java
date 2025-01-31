@@ -4,30 +4,25 @@ import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentSplitter;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.segment.TextSegment;
-import org.commonmark.node.AbstractVisitor;
-import org.commonmark.node.BulletList;
-import org.commonmark.node.Code;
-import org.commonmark.node.Emphasis;
 import org.commonmark.node.FencedCodeBlock;
-import org.commonmark.node.HardLineBreak;
 import org.commonmark.node.Heading;
 import org.commonmark.node.IndentedCodeBlock;
-import org.commonmark.node.ListItem;
 import org.commonmark.node.Node;
-import org.commonmark.node.OrderedList;
 import org.commonmark.node.Paragraph;
-import org.commonmark.node.SoftLineBreak;
-import org.commonmark.node.StrongEmphasis;
 import org.commonmark.node.Text;
 import org.commonmark.parser.Parser;
+import org.commonmark.renderer.NodeRenderer;
+import org.commonmark.renderer.markdown.CoreMarkdownNodeRenderer;
+import org.commonmark.renderer.markdown.MarkdownNodeRendererContext;
+import org.commonmark.renderer.markdown.MarkdownNodeRendererFactory;
+import org.commonmark.renderer.markdown.MarkdownRenderer;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Deque;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -41,7 +36,7 @@ import java.util.function.Function;
  */
 public class MarkdownSectionSplitter implements DocumentSplitter {
 
-    private static final Header NO_HEADER = new Header("==NO HEADER==", 1);
+    private static final Header NO_HEADER = new Header(null, 1);
 
     public static final String SECTION_LEVEL = "md_section_level";
     public static final String SECTION_HEADER = "md_section_header";
@@ -75,13 +70,28 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
     @Override
     public List<TextSegment> split(Document document) {
-        Parser parser = Parser.builder().build();
-        Node root = parser.parse(document.text());
+        Node node = Parser.builder().build().parse(document.text());
 
-        SectionsByHeaderVisitor visitor = new SectionsByHeaderVisitor(document.metadata());
-        root.accept(visitor);
-        visitor.finish();
-        return visitor.segments;
+        MarkdownSplitterContext context = new MarkdownSplitterContext(document.metadata());
+        MarkdownRenderer renderer = MarkdownRenderer.builder()
+                .nodeRendererFactory(new MarkdownSectionSplitterNodeRendererFactory(context))
+                .build();
+        // We use the Appendable allowed by the renderer as the hook in.
+        // I tried a few other approaches, but this is the only one I can find that works...
+        renderer.render(node, context.getBuffer());
+        context.endSection();
+
+
+
+//        System.out.println("---------\n\n");
+//        System.out.println("Buffer:");
+//        System.out.println(context.buffer.everything);
+//        System.out.println("Parts:");
+////        for (String s : context.parts) {
+////            System.out.print(s);
+////        }
+
+        return context.getSegments();
     }
 
     /**
@@ -163,152 +173,43 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         }
     }
 
-    private class SectionsByHeaderVisitor extends AbstractVisitor {
+
+    private class MarkdownSplitterContext {
+        private final MarkdownSplitterBuffer buffer = new MarkdownSplitterBuffer();
+
         private final Metadata originalMetadata;
         private final List<TextSegment> segments = new ArrayList<>();
         private final List<Header> headers = new ArrayList<>();
-        private StringBuilder currentSection = new StringBuilder();
         private Header currentHeader;
+
         private int nullHeaderIndex = 0;
-//        private List<ListItemMarker> listStack = new ArrayList<>();
-        private Deque<ListItemMarker> listStack = new ArrayDeque<>();
 
-        public SectionsByHeaderVisitor(final Metadata originalMetadata) {
-            this.originalMetadata = new Metadata(originalMetadata.toMap());
+        public MarkdownSplitterContext(Metadata metadata) {
+            originalMetadata = metadata;
         }
 
-        @Override
-        public void visit(final Heading heading) {
-            endSection();
-            currentHeader = new Header(heading);
+        public MarkdownSplitterBuffer getBuffer() {
+            return buffer;
         }
 
-        @Override
-        public void visit(final Paragraph paragraph) {
-            if (currentHeader != null || headers.isEmpty()) {
-                if (currentHeader == null) {
-                    currentHeader = new Header(documentTitle, 1);
-                }
+        public void endSection() {
+            String currentSection = buffer.rollover();
+            // This should be the section
+            if (currentHeader == null && headers.isEmpty() && !currentSection.isEmpty() && documentTitle != null) {
+                currentHeader = new Header(documentTitle, 1);
             }
-            super.visit(paragraph);
-            if (!(paragraph.getParent() instanceof ListItem)) {
-                // Don't add extra lines for paragraphs in lists
-               currentSection.append("\n\n");
-            }
-        }
-
-        @Override
-        public void visit(final Text text) {
-            currentSection.append(text.getLiteral());
-        }
-
-        @Override
-        public void visit(final Emphasis emphasis) {
-            // Don't do anything special here for now.
-            // Otherwise, we should append "**" before and after visiting
-            super.visit(emphasis);
-        }
-
-        @Override
-        public void visit(final StrongEmphasis strongEmphasis) {
-            // Don't do anything special here for now.
-            // Otherwise, we should append "*" before and after visiting
-            super.visit(strongEmphasis);
-        }
-
-        @Override
-        public void visit(final FencedCodeBlock codeBlock) {
-            currentSection.append("```");
-            currentSection.append(codeBlock.getInfo());
-            currentSection.append("\n");
-            currentSection.append(codeBlock.getLiteral());
-            currentSection.append("```\n");
-        }
-
-        @Override
-        public void visit(final IndentedCodeBlock codeBlock) {
-            // In the segment convert indented code blocks to fenced ones (so use the backticks rather than the
-            // 4 spaces/tabs
-            currentSection.append("```\n");
-            currentSection.append(codeBlock.getLiteral());
-            currentSection.append("```\n");
-        }
-
-        @Override
-        public void visit(final BulletList bulletList) {
-            listStack.push(new BulletListItemMarker(listStack.peek()));
-            try {
-                super.visit(bulletList);
-            } finally {
-                listStack.pop();
-            }
-            if (!(bulletList.getParent() instanceof ListItem)) {
-                currentSection.append("\n\n");
-            }
-        }
-
-        @Override
-        public void visit(final OrderedList orderedList) {
-            listStack.push(new OrderedListItemMarker(listStack.peek(), orderedList.getMarkerStartNumber(), orderedList.getMarkerDelimiter()));
-            try {
-                super.visit(orderedList);
-            } finally {
-                listStack.pop();
-            }
-            if (!(orderedList.getParent() instanceof ListItem)) {
-                currentSection.append("\n\n");
-            }
-        }
-
-        @Override
-        public void visit(final ListItem listItem) {
-            if (currentSection.isEmpty() || currentSection.charAt(currentSection.length() - 1) != '\n') {
-                currentSection.append("\n");
-            }
-
-            int indent = listStack.peek().getIndent();
-            indent(currentSection, indent);
-
-            ListItemMarker marker = listStack.peek();
-            currentSection.append(marker.getMarker());
-            currentSection.append(" ");
-            super.visit(listItem);
-            marker.itemComplete();
-        }
-
-        @Override
-        public void visit(final HardLineBreak hardLineBreak) {
-            currentSection.append("\n\n");
-            super.visit(hardLineBreak);
-        }
-
-        @Override
-        public void visit(final SoftLineBreak softLineBreak) {
-            currentSection.append("\n");
-            super.visit(softLineBreak);
-        }
-
-        @Override
-        public void visit(final Code code) {
-            currentSection.append("`").append(code.getLiteral()).append("`");
-        }
-
-
-
-        private void indent(StringBuilder sb, int indent) {
-            sb.append(" ".repeat(Math.max(0, indent)));
-        }
-
-        private void endSection() {
             if (currentHeader != null || !currentSection.isEmpty()) {
                 Header header = currentHeader != null ? currentHeader : NO_HEADER;
                 addHeaderToHierarchy(header);
-                addSectionSegments(header, currentSection.toString());
+                addSectionSegments(header, currentSection);
             }
+        }
 
-            if (!currentSection.isEmpty()) {
-                currentSection = new StringBuilder();
-            }
+        public void newSectionHeaderFound(Heading heading) {
+            // The buffer will contain the header, clean it out and read it directly from the Heading instead to
+            // remove any markup characters.
+            buffer.rollover();
+            currentHeader = new Header(heading);
         }
 
         private void addSectionSegments(Header header, String sectionText) {
@@ -334,7 +235,7 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
         private void addHeaderToHierarchy(Header header) {
             if (!headers.isEmpty()) {
-                for (ListIterator<Header> it = headers.listIterator(headers.size()) ; it.hasPrevious() ; ) {
+                for (ListIterator<Header> it = headers.listIterator(headers.size()); it.hasPrevious() ; ) {
                     Header curr = it.previous();
                     if (curr.level < header.level) {
                         curr.addChild(header);
@@ -350,8 +251,90 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
         }
 
-        private void finish() {
-            endSection();
+        public List<TextSegment> getSegments() {
+            return segments;
+        }
+    }
+
+    private static class MarkdownSplitterBuffer implements Appendable {
+        // Temporary for testing
+        private StringBuilder everything = new StringBuilder();
+        private StringBuilder current = new StringBuilder();
+
+        @Override
+        public Appendable append(final CharSequence csq) {
+            everything.append(csq);
+            current.append(csq);
+            return this;
+        }
+
+        @Override
+        public Appendable append(final CharSequence csq, final int start, final int end) {
+            everything.append(csq, start, end);
+            current.append(csq, start, end);
+            return this;
+        }
+
+        @Override
+        public Appendable append(final char c) {
+            everything.append(c);
+            current.append(c);
+            return this;
+        }
+
+        public String rollover() {
+            String temp = current.toString();
+            current = new StringBuilder();
+            return temp;
+        }
+
+        @Override
+        public String toString() {
+            return current.toString();
+        }
+
+    }
+
+    private static class MarkdownSectionSplitterNodeRendererFactory implements MarkdownNodeRendererFactory {
+        private final MarkdownSplitterContext splitterContext;
+
+        public MarkdownSectionSplitterNodeRendererFactory(MarkdownSplitterContext splitterContext) {
+            this.splitterContext = splitterContext;
+        }
+
+        @Override
+        public NodeRenderer create(final MarkdownNodeRendererContext context) {
+            return new HeaderSplittingCoreNodeRenderer(context, splitterContext);
+        }
+
+        @Override
+        public Set<Character> getSpecialCharacters() {
+            return Set.of();
+        }
+
+    }
+
+    private static class HeaderSplittingCoreNodeRenderer extends CoreMarkdownNodeRenderer {
+        private final MarkdownSplitterContext context;
+
+        public HeaderSplittingCoreNodeRenderer(MarkdownNodeRendererContext context, MarkdownSplitterContext splitterContext) {
+            super(context);
+            this.context = splitterContext;
+        }
+
+        @Override
+        public void visit(Heading heading) {
+            context.endSection();
+            super.visit(heading);
+            context.newSectionHeaderFound(heading);
+        }
+
+        public void visit(final IndentedCodeBlock indentedCodeBlock) {
+            // Translate from indented to fenced code blocks for consistency
+            FencedCodeBlock fencedCodeBlock = new FencedCodeBlock();
+            String literal = indentedCodeBlock.getLiteral();
+            fencedCodeBlock.setLiteral(literal);
+            super.visit(fencedCodeBlock);
         }
     }
 
@@ -390,71 +373,6 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
             children.add(child);
             child.indexInParent = children.size() - 1;
             child.parent = this;
-        }
-    }
-
-     private static abstract class ListItemMarker {
-         private final int indent;
-         private final int childIndent;
-
-         abstract String getMarker();
-
-         abstract void itemComplete();
-
-         public ListItemMarker(ListItemMarker previous, int childIndent) {
-             if (previous == null) {
-                 indent = 0;
-             } else {
-                 indent = previous.getIndent() + previous.childIndent;
-             }
-             this.childIndent = childIndent;
-         }
-
-         int getIndent() {
-             return indent;
-         }
-    }
-
-    private static class BulletListItemMarker extends ListItemMarker {
-        private static final String MARKER = "*";
-        private static final int CHILD_INDENT = 2;
-
-
-        BulletListItemMarker(ListItemMarker previous) {
-            super(previous, CHILD_INDENT);
-        }
-
-        @Override
-        public String getMarker() {
-            return MARKER;
-        }
-
-        @Override
-        public void itemComplete() {
-        }
-
-    }
-
-    private static class OrderedListItemMarker extends ListItemMarker {
-        private static final int CHILD_INDENT = 3;
-        int index;
-        private final String markerDelimiter;
-
-
-        OrderedListItemMarker(ListItemMarker previous, final int index, final String markerDelimiter) {
-            super(previous, CHILD_INDENT);
-            this.index = index;
-            this.markerDelimiter = markerDelimiter;
-        }
-
-        @Override
-        public String getMarker() {
-            return index + markerDelimiter;
-        }
-
-        @Override
-        public void itemComplete() {
-            index++;
         }
     }
 

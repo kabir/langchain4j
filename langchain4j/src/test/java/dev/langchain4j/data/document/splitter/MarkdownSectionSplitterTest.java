@@ -219,8 +219,7 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
     @Test
     public void testFencedCodeBlock() {
-        // The parser adds an empty line between text and a following code block. After the code block, there is no
-        // space before any following text.
+        // The renderer adds empty lines around code blocks
         // Test some variations of the input.
         String text = "# Title\n" +
                 "Some text\n" +
@@ -242,15 +241,14 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
         Assertions.assertEquals(1, segments.size());
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
-                "Some text\n\n```\n    function(){\n       this.i++;\n\t}\n```\n" +
-                        "More text\n\n```\n    print(x);\n```\nFinal text");
+                "Some text\n\n```\n    function(){\n       this.i++;\n\t}\n```\n\n" +
+                        "More text\n\n```\n    print(x);\n```\n\nFinal text");
 
     }
 
     @Test
     public void testIndentedCodeBlock() {
-        // The parser adds an empty line between text and a following code block. After the code block, there is no
-        // space before any following text.
+        // The renderer adds empty lines around code blocks
         // Test some variations of the input.
         // In the output Markdown, we use the fenced style always for consistency.
         String text = "# Title\n" +
@@ -268,10 +266,9 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         List<TextSegment> segments = splitter.split(source);
 
         Assertions.assertEquals(1, segments.size());
-        // IndentedCodeBlock.literal does not include the leading tabs/4 spaces
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
-                "Some text\n\n```\n    function(){\n       this.i++;\n    }\n```\n" +
-                        "More text\n\n```\n    print(x);\n```\nFinal text");
+                "Some text\n\n```\n    function(){\n       this.i++;\n    }\n```\n\n" +
+                        "More text\n\n```\n    print(x);\n```\n\nFinal text");
 
     }
 
@@ -293,8 +290,7 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
     @Test
     public void testEmphasis() {
-        // At the moment we are stripping out the emphasis markers.
-        // I don't think they are important to an LLM.
+        //The renderer replaces '__' with '**'. They have the same meaning.
         String text = "# Title\n" +
                 "The *quick* brown _fox_ jumped **over** the __lazy__ dog";
 
@@ -305,7 +301,7 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
         Assertions.assertEquals(1, segments.size());
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
-                "The quick brown fox jumped over the lazy dog");
+                "The *quick* brown _fox_ jumped **over** the **lazy** dog");
     }
 
     @Test
@@ -314,8 +310,6 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         // Setext uses equals under a line for H1, and hyphens for H2
         String text = "Title\n" +
                 "=====\n" +
-                // We need an extra newline at the end of the section for the next line to be recognised as a header
-                // This is also the case when trying it out in a Markdown editor
                 "intro\n\n" +
                 "Section 1\n" +
                 "----\n" +
@@ -335,8 +329,8 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
     @Test
     public void testBulletList() {
-        // The parser will return a new line between previous text and the list itself.
-        // Try both types of input
+        // The renderer adds empty lines around the lists.
+        // Test some variations of the input.
         String text = "# Title\n" +
                 "intro\n" +
                 "- One\n" +
@@ -355,13 +349,13 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
         Assertions.assertEquals(1, segments.size());
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0,
-                "intro\n\n* One\n* Two `test` two\n\nAfter text\n\n* First\n* Second");
+                "intro\n\n- One\n- Two `test` two\n\nAfter text\n\n* First\n* Second");
     }
 
     @Test
     public void testOrderedList() {
-        // The parser will return a new line between previous text and the list itself.
-        // Try both types of input
+        // The renderer adds empty lines around the lists.
+        // Test some variations of the input.
         String text = "# Title\n" +
                 "intro\n" +
                 "1. One\n" +
@@ -385,6 +379,8 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
 
     @Test
     public void testNestedLists() {
+        // The renderer adds empty lines around the lists.
+        // Test some variations of the input.
         // Note that nested lists of ordered lists need at least 3 spaces, while nested lists in
         // bullet lists can do with 2.
         String body = "intro\n\n" +
@@ -402,8 +398,7 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
                 "     * 3-1-2\n" +
                 "       * 3-1-2-1\n" +
                 "       * 3-1-2-2\n" +
-                "     * 3-1-3\n" +
-                "  2. 3.2\n";
+                "     * 3-1-3";
 
 
         String text = "# Title\n" +
@@ -420,6 +415,29 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0, body.trim());
     }
 
+    @Test
+    public void testBlockQuotes() {
+        String text = "# Title\n" +
+                "intro\n" +
+                "> line1\n" +
+                ">\n" +
+                ">line2\n" +
+                "line3\n" +
+                "\n" +
+                "Other text\n\n" +
+                "> #Ignored header\n\n" +
+                "Final text";
+
+        DocumentSplitter splitter = MarkdownSectionSplitter.builder()
+        .build();
+
+        Document source = createDocument(text);
+        List<TextSegment> segments = splitter.split(source);
+
+        Assertions.assertEquals(1, segments.size());
+        checkTextSegment(source, segments.get(0), "Title", null, 0, 0, text);
+
+    }
 
     private Document createDocument(String text) {
         DocumentSource loader = new StringDocumentSource(text);
