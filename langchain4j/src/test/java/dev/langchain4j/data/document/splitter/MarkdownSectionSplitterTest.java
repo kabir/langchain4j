@@ -11,7 +11,6 @@ import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.document.parser.TextDocumentParser;
 import dev.langchain4j.data.segment.TextSegment;
 import org.assertj.core.api.WithAssertions;
-import org.junit.Assert;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -203,11 +202,13 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
     }
 
     @Test
-    public void testOverrideConvertSectionToDocument() {
+    public void testAdjusters() {
         String text = "# Title\n" + "intro\n" + "## Section 1\n" + "section 1\n";
 
+        TestMarkdownAdjuster adjuster = new TestMarkdownAdjuster();
         DocumentSplitter splitter = MarkdownSectionSplitter.builder()
-                .setConstructor(TestMarkdownSplitter::new)
+                .setDocumentAdjuster(adjuster)
+                .setTextSegmentsAdjuster(adjuster)
                 .build();
 
         Document source = createDocument(text);
@@ -216,10 +217,12 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         Assertions.assertEquals(2, segments.size());
 
         checkTextSegment(source, segments.get(0), "Title", null, 0, 0, "intro");
-        assertThat(segments.get(0).metadata().getInteger("test-counter")).isEqualTo(0);
+        assertThat(segments.get(0).metadata().getInteger("test-doc-counter")).isEqualTo(0);
+        assertThat(segments.get(0).metadata().getInteger("test-segment-counter")).isEqualTo(0);
 
         checkTextSegment(source, segments.get(1), "Section 1", "Title", 1, 0, "section 1");
-        assertThat(segments.get(1).metadata().getInteger("test-counter")).isEqualTo(1);
+        assertThat(segments.get(1).metadata().getInteger("test-doc-counter")).isEqualTo(1);
+        assertThat(segments.get(1).metadata().getInteger("test-segment-counter")).isEqualTo(10);
     }
 
     @Test
@@ -639,17 +642,20 @@ public class MarkdownSectionSplitterTest implements WithAssertions {
         }
     }
 
-    private static class TestMarkdownSplitter extends MarkdownSectionSplitter {
-        static int counter = 0;
-
-        public TestMarkdownSplitter(Builder builder) {
-            super(builder);
+    private static class TestMarkdownAdjuster implements MarkdownSectionSplitter.DocumentAdjuster, MarkdownSectionSplitter.TextSegmentsAdjuster {
+        static int doc_counter = 0;
+        static int segment_counter = 0;
+        @Override
+        public Document adjust(final Document original) {
+            original.metadata().put("test-doc-counter", doc_counter++);
+            return original;
         }
 
         @Override
-        protected Document adjustDocument(final Document document) {
-            document.metadata().put("test-counter", counter++);
-            return document;
+        public List<TextSegment> adjust(final List<TextSegment> originalSegments) {
+            originalSegments.forEach(ts -> ts.metadata().put("test-segment-counter", segment_counter));
+            segment_counter += 10;
+            return originalSegments;
         }
     }
 }

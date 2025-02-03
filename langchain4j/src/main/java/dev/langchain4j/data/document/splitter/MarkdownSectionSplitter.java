@@ -2,7 +2,6 @@ package dev.langchain4j.data.document.splitter;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.google.gson.JsonParser;
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentSplitter;
 import dev.langchain4j.data.document.Metadata;
@@ -32,7 +31,6 @@ import java.util.ListIterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.Function;
 
 /**
  * A {@link DocumentSplitter} that takes a Markdown as input.
@@ -62,15 +60,24 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
     private final String emptySectionPlaceholderText;
 
-    private LinkHandling linkHandling;
+    private final LinkHandling linkHandling;
+
+    private final DocumentAdjuster documentAdjuster;
+    private final TextSegmentsAdjuster textSegmentsAdjuster;
 
     protected MarkdownSectionSplitter(Builder builder) {
-        ValidationUtils.ensureNotNull(builder.sectionSplitter, "sectionSplitter");
-        ValidationUtils.ensureNotNull(builder.linkHandling, "linkHandling");
-        this.sectionSplitter = builder.sectionSplitter;
-        this.documentTitle = builder.documentTitle;
-        this.emptySectionPlaceholderText = builder.emptySectionPlaceholderText;
-        this.linkHandling = builder.linkHandling;
+        ValidationUtils.ensureNotNull(builder.getSectionSplitter(), "sectionSplitter");
+        ValidationUtils.ensureNotNull(builder.getLinkHandling(), "linkHandling");
+        ValidationUtils.ensureNotNull(builder.getSectionSplitter(), "sectionSplitter");
+        ValidationUtils.ensureNotNull(builder.getLinkHandling(), "linkHandling");
+        ValidationUtils.ensureNotNull(builder.getDocumentAdjuster(), "documentAdjuster");
+        ValidationUtils.ensureNotNull(builder.getTextSegmentAdjuster(), "textSegmentAdjuster");
+        this.sectionSplitter = builder.getSectionSplitter();
+        this.documentTitle = builder.getDocumentTitle();
+        this.emptySectionPlaceholderText = builder.getEmptySectionPlaceholderText();
+        this.linkHandling = builder.getLinkHandling();
+        this.documentAdjuster = builder.getDocumentAdjuster();
+        this.textSegmentsAdjuster = builder.getTextSegmentAdjuster();
     }
 
     /**
@@ -99,16 +106,6 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         return context.getSegments();
     }
 
-    /**
-     * Hook to add more data to the {@link Document} representing a split section before splitting
-     * it into {@link TextSegment}s. This default implementation does nothing.
-     *
-     * @param document the document containing the section
-     */
-    protected Document adjustDocument(Document document) {
-        return document;
-    }
-
     public static class Builder {
         private DocumentSplitter sectionSplitter = NO_SPLIT;
         private String documentTitle;
@@ -116,7 +113,8 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
 
         private LinkHandling linkHandling = LinkHandling.STANDARD;
 
-        private Function<Builder, MarkdownSectionSplitter> constructor;
+        private DocumentAdjuster documentAdjuster = new DefaultAdjuster();
+        private TextSegmentsAdjuster textSegmentsAdjuster = new DefaultAdjuster();
 
         /**
          * <p>Sets the {@link DocumentSplitter} to further split each section.</p>
@@ -159,17 +157,6 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         }
 
         /**
-         *
-         * @param constructor
-         * @return
-         */
-        public Builder setConstructor(Function<Builder, MarkdownSectionSplitter> constructor) {
-            this.constructor = constructor;
-            return this;
-        }
-
-
-        /**
          * Sets the link handling for the splitter. The default is {@link LinkHandling#STRIP}.
          *
          * @param linkHandling the link handling
@@ -181,14 +168,80 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
         }
 
         /**
+         * Sets an {@code Adjuster} to use to add/remove metadata in, or otherwise, adjust a {@link Document}
+         * from an extracted section before further splitting it into {@link TextSegment}s.
+         *
+         * @param documentAdjuster the adjuster
+         * @return this builder
+         */
+        public Builder setDocumentAdjuster(DocumentAdjuster documentAdjuster) {
+            this.documentAdjuster = documentAdjuster;
+            return this;
+        }
+
+        /**
+         * Sets an {@code Adjuster} to use to add/remove metadata in, or otherwise, adjust {@link TextSegment}s
+         * split from a section
+         *
+         * @param textSegmentsAdjuster the adjuster
+         * @return this builder
+         */
+        public Builder setTextSegmentsAdjuster(TextSegmentsAdjuster textSegmentsAdjuster) {
+            this.textSegmentsAdjuster = textSegmentsAdjuster;
+            return this;
+        }
+
+
+        /**
          * Constructs the {@link MarkdownSectionSplitter} instance
          * @return the MarkdownSectionSplitter
          */
         public MarkdownSectionSplitter build() {
-            if (constructor == null) {
-                return new MarkdownSectionSplitter(this);
-            }
-            return constructor.apply(this);
+            return new MarkdownSectionSplitter(this);
+        }
+
+        public DocumentSplitter getSectionSplitter() {
+            return sectionSplitter;
+        }
+
+        public String getDocumentTitle() {
+            return documentTitle;
+        }
+
+        public String getEmptySectionPlaceholderText() {
+            return emptySectionPlaceholderText;
+        }
+
+        public LinkHandling getLinkHandling() {
+            return linkHandling;
+        }
+
+        public DocumentAdjuster getDocumentAdjuster() {
+            return documentAdjuster;
+        }
+
+        public TextSegmentsAdjuster getTextSegmentAdjuster() {
+            return textSegmentsAdjuster;
+        }
+    }
+
+    public interface DocumentAdjuster {
+        Document adjust(Document original);
+    }
+
+    public interface TextSegmentsAdjuster {
+        List<TextSegment> adjust(List<TextSegment> originalSegments);
+    }
+
+    private static class DefaultAdjuster implements DocumentAdjuster, TextSegmentsAdjuster {
+        @Override
+        public Document adjust(final Document original) {
+            return original;
+        }
+
+        @Override
+        public List<TextSegment> adjust(final List<TextSegment> originalSegments) {
+            return originalSegments;
         }
     }
 
@@ -281,7 +334,7 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
                 sectionText = emptySectionPlaceholderText;
             }
             Document document = new Document(sectionText, metadata);
-            document = adjustDocument(document);
+            document = documentAdjuster.adjust(document);
 
             List<TextSegment> segments = sectionSplitter.split(document);
             if (!currentSectionLinks.isEmpty()) {
@@ -308,7 +361,7 @@ public class MarkdownSectionSplitter implements DocumentSplitter {
                 }
 
             }
-
+            segments = textSegmentsAdjuster.adjust(segments);
             this.segments.addAll(segments);
         }
 
